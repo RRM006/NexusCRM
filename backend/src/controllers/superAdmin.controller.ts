@@ -1,7 +1,6 @@
 import { Request, Response } from 'express';
-import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
-import prisma from '../lib/prisma';
+import { prisma } from '../index';
 
 // Pre-built super admin credentials (should be in env for production)
 const SUPER_ADMIN_EMAIL = process.env.SUPER_ADMIN_EMAIL || 'superadmin@nexuscrm.com';
@@ -104,8 +103,11 @@ export const verifySuperAdmin = async (req: Request, res: Response): Promise<voi
 // Get Dashboard Statistics
 export const getDashboardStats = async (req: Request, res: Response): Promise<void> => {
   try {
+    console.log('Fetching super admin dashboard stats...');
+    
     // Get total companies
     const totalCompanies = await prisma.company.count();
+    console.log('Total companies:', totalCompanies);
     
     // Get active companies
     const activeCompanies = await prisma.company.count({
@@ -114,6 +116,7 @@ export const getDashboardStats = async (req: Request, res: Response): Promise<vo
 
     // Get total users
     const totalUsers = await prisma.user.count();
+    console.log('Total users:', totalUsers);
 
     // Get total customers (users with CUSTOMER role)
     const totalCustomers = await prisma.userCompanyRole.count({
@@ -128,16 +131,46 @@ export const getDashboardStats = async (req: Request, res: Response): Promise<vo
     });
 
     // Get total leads across all companies
-    const totalLeads = await prisma.lead.count();
+    let totalLeads = 0;
+    try {
+      totalLeads = await prisma.lead.count();
+      console.log('Total leads:', totalLeads);
+    } catch (leadError) {
+      console.error('Error counting leads:', leadError);
+    }
 
     // Get total deals across all companies
-    const totalDeals = await prisma.deal.count();
+    let totalDeals = 0;
+    try {
+      totalDeals = await prisma.deal.count();
+      console.log('Total deals:', totalDeals);
+    } catch (dealError) {
+      console.error('Error counting deals:', dealError);
+    }
 
-    // Get total revenue (won deals)
-    const wonDeals = await prisma.deal.aggregate({
-      where: { status: 'WON' },
-      _sum: { value: true }
-    });
+    // Get total revenue (won deals) - also check leads with WON status
+    let totalRevenue = 0;
+    try {
+      // Check deals with WON status
+      const wonDealsRevenue = await prisma.deal.aggregate({
+        where: { status: 'WON' },
+        _sum: { value: true }
+      });
+      totalRevenue += wonDealsRevenue._sum.value || 0;
+      
+      // Also check leads with WON status
+      const wonLeadsRevenue = await prisma.lead.aggregate({
+        where: { status: 'WON' },
+        _sum: { value: true }
+      });
+      totalRevenue += wonLeadsRevenue._sum.value || 0;
+      console.log('Total revenue:', totalRevenue);
+    } catch (revenueError) {
+      console.error('Error calculating revenue:', revenueError);
+    }
+
+    // For backwards compatibility, keep the wonDeals variable
+    const wonDeals = { _sum: { value: totalRevenue } };
 
     // Get companies created in last 30 days
     const thirtyDaysAgo = new Date();
@@ -183,23 +216,45 @@ export const getDashboardStats = async (req: Request, res: Response): Promise<vo
       },
       orderBy: { createdAt: 'desc' }
     });
+    console.log('Companies fetched:', companiesWithStats.length);
 
-    // Format companies data
-    const companies = companiesWithStats.map(company => ({
-      id: company.id,
-      name: company.name,
-      slug: company.slug,
-      logo: company.logo,
-      industry: company.industry || 'Not specified',
-      isActive: company.isActive,
-      createdAt: company.createdAt,
-      owner: company.owner,
-      stats: {
-        totalMembers: company._count.userCompanyRoles,
-        totalCustomers: company._count.customers,
-        totalLeads: company._count.leads,
-        totalDeals: company._count.deals
+    // Format companies data with detailed stats
+    const companies = await Promise.all(companiesWithStats.map(async (company) => {
+      // Get company-specific revenue from won leads and deals
+      let companyRevenue = 0;
+      try {
+        const wonLeads = await prisma.lead.aggregate({
+          where: { companyId: company.id, status: 'WON' },
+          _sum: { value: true }
+        });
+        companyRevenue += wonLeads._sum.value || 0;
+
+        const wonDeals = await prisma.deal.aggregate({
+          where: { companyId: company.id, status: 'WON' },
+          _sum: { value: true }
+        });
+        companyRevenue += wonDeals._sum.value || 0;
+      } catch (e) {
+        console.error('Error calculating company revenue:', e);
       }
+
+      return {
+        id: company.id,
+        name: company.name,
+        slug: company.slug,
+        logo: company.logo,
+        industry: company.industry || 'Not specified',
+        isActive: company.isActive,
+        createdAt: company.createdAt,
+        owner: company.owner,
+        stats: {
+          totalMembers: company._count.userCompanyRoles,
+          totalCustomers: company._count.customers,
+          totalLeads: company._count.leads,
+          totalDeals: company._count.deals,
+          totalRevenue: companyRevenue
+        }
+      };
     }));
 
     // Get recent activity (last 10 companies created)

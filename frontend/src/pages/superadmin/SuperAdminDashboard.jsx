@@ -101,6 +101,11 @@ const CompanyRow = ({ company, onToggleStatus, onViewDetails }) => {
       <td className="py-4 px-4 text-center">
         <span className="text-slate-300">{company.stats?.totalDeals || 0}</span>
       </td>
+      <td className="py-4 px-4 text-right">
+        <span className="text-emerald-400 font-medium">
+          ${(company.stats?.totalRevenue || 0).toLocaleString()}
+        </span>
+      </td>
       <td className="py-4 px-4">
         <span className={`px-3 py-1 rounded-full text-xs font-medium ${
           company.isActive 
@@ -384,6 +389,7 @@ const SuperAdminDashboard = () => {
                     <th className="text-center py-3 px-4 text-xs font-medium text-slate-400 uppercase tracking-wider">Customers</th>
                     <th className="text-center py-3 px-4 text-xs font-medium text-slate-400 uppercase tracking-wider">Leads</th>
                     <th className="text-center py-3 px-4 text-xs font-medium text-slate-400 uppercase tracking-wider">Deals</th>
+                    <th className="text-right py-3 px-4 text-xs font-medium text-slate-400 uppercase tracking-wider">Revenue</th>
                     <th className="text-left py-3 px-4 text-xs font-medium text-slate-400 uppercase tracking-wider">Status</th>
                     <th className="text-left py-3 px-4 text-xs font-medium text-slate-400 uppercase tracking-wider">Created</th>
                     <th className="text-left py-3 px-4 text-xs font-medium text-slate-400 uppercase tracking-wider">Actions</th>
@@ -401,7 +407,7 @@ const SuperAdminDashboard = () => {
                     ))
                   ) : (
                     <tr>
-                      <td colSpan={9} className="py-12 text-center text-slate-500">
+                      <td colSpan={10} className="py-12 text-center text-slate-500">
                         {searchQuery ? 'No companies found matching your search' : 'No companies registered yet'}
                       </td>
                     </tr>
