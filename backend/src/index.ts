@@ -22,6 +22,7 @@ import emailRoutes from './routes/email.routes';
 import aiRoutes from './routes/ai.routes';
 import pipelineRoutes from './routes/pipeline.routes';
 import dealRoutes from './routes/deal.routes';
+import superAdminRoutes from './routes/superAdmin.routes';
 
 // Middleware
 import { errorHandler } from './middleware/error.middleware';
@@ -97,6 +98,7 @@ app.use('/api/email', emailRoutes);
 app.use('/api/ai', aiRoutes);
 app.use('/api/pipeline', pipelineRoutes);
 app.use('/api/deals', dealRoutes);
+app.use('/api/super-admin', superAdminRoutes);
 
 // Error Handler
 app.use(errorHandler);

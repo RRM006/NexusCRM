@@ -35,6 +35,19 @@ import Email from './pages/email/Email'
 import Settings from './pages/Settings'
 import Profile from './pages/Profile'
 
+// Super Admin
+import SuperAdminLogin from './pages/superadmin/SuperAdminLogin'
+import SuperAdminDashboard from './pages/superadmin/SuperAdminDashboard'
+
+// Super Admin Protected Route
+const SuperAdminRoute = ({ children }) => {
+  const token = localStorage.getItem('superAdminToken')
+  if (!token) {
+    return <Navigate to="/admin" replace />
+  }
+  return children
+}
+
 // Loading Component
 const LoadingScreen = () => (
   <div className="min-h-screen flex items-center justify-center bg-dark-950">
@@ -182,6 +195,14 @@ function App() {
         <Route path="/settings" element={<Settings />} />
         <Route path="/profile" element={<Profile />} />
       </Route>
+
+      {/* Super Admin Routes */}
+      <Route path="/admin" element={<SuperAdminLogin />} />
+      <Route path="/admin/dashboard" element={
+        <SuperAdminRoute>
+          <SuperAdminDashboard />
+        </SuperAdminRoute>
+      } />
 
       {/* Catch all - 404 */}
       <Route path="*" element={<Navigate to="/" replace />} />

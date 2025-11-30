@@ -233,6 +233,49 @@ export const dealsAPI = {
   getStats: (period = 30) => api.get(`/deals/stats?period=${period}`)
 }
 
+// Super Admin API
+export const superAdminAPI = {
+  login: (data) => axios.post(`${API_URL}/super-admin/login`, data),
+  verify: () => {
+    const token = localStorage.getItem('superAdminToken')
+    return axios.get(`${API_URL}/super-admin/verify`, {
+      headers: { Authorization: `Bearer ${token}` }
+    })
+  },
+  getDashboard: () => {
+    const token = localStorage.getItem('superAdminToken')
+    return axios.get(`${API_URL}/super-admin/dashboard`, {
+      headers: { Authorization: `Bearer ${token}` }
+    })
+  },
+  getCompanies: (params) => {
+    const token = localStorage.getItem('superAdminToken')
+    return axios.get(`${API_URL}/super-admin/companies`, {
+      headers: { Authorization: `Bearer ${token}` },
+      params
+    })
+  },
+  getCompanyDetails: (companyId) => {
+    const token = localStorage.getItem('superAdminToken')
+    return axios.get(`${API_URL}/super-admin/companies/${companyId}`, {
+      headers: { Authorization: `Bearer ${token}` }
+    })
+  },
+  toggleCompanyStatus: (companyId) => {
+    const token = localStorage.getItem('superAdminToken')
+    return axios.patch(`${API_URL}/super-admin/companies/${companyId}/toggle-status`, {}, {
+      headers: { Authorization: `Bearer ${token}` }
+    })
+  },
+  getUsers: (params) => {
+    const token = localStorage.getItem('superAdminToken')
+    return axios.get(`${API_URL}/super-admin/users`, {
+      headers: { Authorization: `Bearer ${token}` },
+      params
+    })
+  }
+}
+
 // Email API
 export const emailAPI = {
   // Gmail OAuth
