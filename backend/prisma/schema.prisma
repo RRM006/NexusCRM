@@ -1,0 +1,871 @@
+// Prisma Schema for Multi-Tenant CRM
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ==================== USER MANAGEMENT ====================
+
+model User {
+  id                String            @id @default(uuid())
+  name              String
+  email             String            @unique
+  password          String
+  avatar            String?
+  phone             String?           @unique
+  bio               String?
+  isEmailVerified   Boolean           @default(false)
+  isPhoneVerified   Boolean           @default(false)
+  
+  // Google OAuth Integration
+  googleId          String?           @unique
+  googleEmail       String?
+  googleAvatar      String?
+  googleLinkedAt    DateTime?
+  
+  // Telegram Integration
+  telegramId        String?           @unique
+  telegramChatId    String?
+  telegramUsername  String?
+  telegramLinkedAt  DateTime?
+  
+  createdAt         DateTime          @default(now())
+  updatedAt         DateTime          @updatedAt
+
+  // Relations
+  refreshTokens     RefreshToken[]
+  userCompanyRoles  UserCompanyRole[]
+  ownedCompanies    Company[]         @relation("CompanyOwner")
+  notifications     Notification[]
+  
+  // CRM Relations (as creator/owner)
+  createdCustomers  Customer[]        @relation("CustomerCreator")
+  createdLeads      Lead[]            @relation("LeadCreator")
+  assignedLeads     Lead[]            @relation("LeadAssignee")
+  ownedDeals        Deal[]            @relation("DealOwner")
+  createdContacts   Contact[]         @relation("ContactCreator")
+  createdTasks      Task[]            @relation("TaskCreator")
+  assignedTasks     Task[]            @relation("TaskAssignee")
+  createdNotes      Note[]            @relation("NoteCreator")
+  createdActivities Activity[]        @relation("ActivityCreator")
+  
+  // Issue Relations
+  createdIssues     Issue[]           @relation("IssueCustomer")
+  resolvedIssues    Issue[]           @relation("IssueResolver")
+  issueCalls        IssueCall[]
+  
+  // Email Relations
+  sentEmails        Email[]           @relation("EmailSender")
+  emailTemplates    EmailTemplate[]   @relation("TemplateCreator")
+  gmailCredential   GmailCredential?
+  
+  // AI Assistant
+  aiConversations   AIConversation[]
+
+  @@map("users")
+}
+
+model RefreshToken {
+  id        String   @id @default(uuid())
+  token     String   @unique
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  @@map("refresh_tokens")
+}
+
+// ==================== COMPANY / TENANT ====================
+
+model Company {
+  id          String   @id @default(uuid())
+  name        String
+  slug        String   @unique
+  logo        String?
+  website     String?
+  industry    String?
+  size        String?
+  address     String?
+  city        String?
+  country     String?
+  phone       String?
+  email       String?
+  description String?
+  isActive    Boolean  @default(true)
+  ownerId     String
+  owner       User     @relation("CompanyOwner", fields: [ownerId], references: [id])
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Relations
+  userCompanyRoles UserCompanyRole[]
+  customers        Customer[]
+  leads            Lead[]
+  deals            Deal[]
+  pipelineStages   PipelineStage[]
+  contacts         Contact[]
+  tasks            Task[]
+  notes            Note[]
+  activities       Activity[]
+  products         Product[]
+  services         Service[]
+  issues           Issue[]
+  emails           Email[]
+  emailTemplates   EmailTemplate[]
+  aiConversations  AIConversation[]
+
+  @@map("companies")
+}
+
+// ==================== USER-COMPANY-ROLE MAPPING ====================
+
+enum Role {
+  ADMIN
+  STAFF
+  CUSTOMER
+}
+
+model UserCompanyRole {
+  id        String   @id @default(uuid())
+  userId    String
+  companyId String
+  role      Role
+  isActive  Boolean  @default(true)
+  joinedAt  DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, companyId, role])
+  @@map("user_company_roles")
+}
+
+// ==================== CRM ENTITIES ====================
+
+enum CustomerStatus {
+  ACTIVE
+  INACTIVE
+  PENDING
+  CHURNED
+}
+
+model Customer {
+  id          String         @id @default(uuid())
+  name        String
+  email       String
+  phone       String?
+  company     String?
+  address     String?
+  city        String?
+  country     String?
+  status      CustomerStatus @default(ACTIVE)
+  notes       String?
+  avatar      String?
+  totalSpent  Float          @default(0)
+  
+  // Tenant isolation
+  companyId   String
+  tenantCompany Company      @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  
+  // Creator
+  createdById String
+  createdBy   User           @relation("CustomerCreator", fields: [createdById], references: [id])
+  
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
+
+  // Relations
+  leads       Lead[]
+  deals       Deal[]
+  contacts    Contact[]
+  tasks       Task[]
+  customerNotes Note[]
+  activities  Activity[]
+  emails      Email[]
+
+  @@map("customers")
+}
+
+enum LeadStatus {
+  NEW
+  CONTACTED
+  QUALIFIED
+  PROPOSAL
+  NEGOTIATION
+  WON
+  LOST
+}
+
+enum LeadSource {
+  WEBSITE
+  REFERRAL
+  SOCIAL_MEDIA
+  EMAIL_CAMPAIGN
+  COLD_CALL
+  TRADE_SHOW
+  OTHER
+}
+
+model Lead {
+  id          String     @id @default(uuid())
+  title       String
+  description String?
+  value       Float      @default(0)
+  status      LeadStatus @default(NEW)
+  source      LeadSource @default(OTHER)
+  priority    Int        @default(1) // 1-5
+  
+  // Pipeline stage (for Kanban view)
+  stageId     String?
+  stage       PipelineStage? @relation(fields: [stageId], references: [id], onDelete: SetNull)
+  stageEnteredAt DateTime?  // When lead entered current stage
+  stageOrder  Int        @default(0) // Order within the stage for drag-drop
+  
+  // Contact info
+  contactEmail String?
+  contactPhone String?
+  contactName  String?
+  
+  // Customer link (optional)
+  customerId  String?
+  customer    Customer?  @relation(fields: [customerId], references: [id], onDelete: SetNull)
+  
+  // Converted to deal
+  convertedToDealId String? @unique
+  convertedToDeal   Deal?   @relation("LeadToDeal", fields: [convertedToDealId], references: [id], onDelete: SetNull)
+  
+  // Tenant isolation
+  companyId   String
+  tenantCompany Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  
+  // Creator & Assignee
+  createdById String
+  createdBy   User       @relation("LeadCreator", fields: [createdById], references: [id])
+  assignedToId String?
+  assignedTo  User?      @relation("LeadAssignee", fields: [assignedToId], references: [id])
+  
+  expectedCloseDate DateTime?
+  closedAt    DateTime?
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+
+  // Relations
+  tasks       Task[]
+  notes       Note[]
+  activities  Activity[]
+  emails      Email[]
+  stageHistory LeadStageHistory[]
+
+  @@index([companyId, stageId])
+  @@index([companyId, status])
+  @@map("leads")
+}
+
+// ==================== SALES PIPELINE ====================
+
+model PipelineStage {
+  id          String   @id @default(uuid())
+  name        String
+  description String?
+  color       String   @default("#6366f1") // Hex color for UI
+  order       Int      @default(0)  // Stage order in pipeline
+  isDefault   Boolean  @default(false) // Default stage for new leads
+  isClosed    Boolean  @default(false) // Won/Lost stages
+  isWon       Boolean  @default(false) // Specifically the Won stage
+  probability Int      @default(0)     // Win probability percentage (0-100)
+  
+  // Tenant isolation
+  companyId   String
+  tenantCompany Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Relations
+  leads       Lead[]
+  deals       Deal[]
+  stageHistory LeadStageHistory[]
+
+  @@unique([companyId, name])
+  @@index([companyId, order])
+  @@map("pipeline_stages")
+}
+
+model LeadStageHistory {
+  id          String   @id @default(uuid())
+  
+  leadId      String
+  lead        Lead     @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  
+  stageId     String
+  stage       PipelineStage @relation(fields: [stageId], references: [id], onDelete: Cascade)
+  
+  enteredAt   DateTime @default(now())
+  exitedAt    DateTime?
+  duration    Int?     // Duration in minutes spent in this stage
+  
+  // Who moved it
+  movedById   String?
+  
+  @@index([leadId, enteredAt])
+  @@map("lead_stage_history")
+}
+
+// ==================== DEALS ====================
+
+enum DealStatus {
+  ACTIVE
+  WON
+  LOST
+}
+
+model Deal {
+  id          String     @id @default(uuid())
+  title       String
+  description String?
+  value       Float      @default(0)
+  currency    String     @default("USD")
+  status      DealStatus @default(ACTIVE)
+  
+  // Pipeline stage
+  stageId     String?
+  stage       PipelineStage? @relation(fields: [stageId], references: [id], onDelete: SetNull)
+  stageOrder  Int        @default(0) // Order within the stage
+  
+  // Win/Loss details
+  wonAt       DateTime?
+  lostAt      DateTime?
+  lostReason  String?
+  
+  // Probability & Expected Revenue
+  probability Int        @default(50) // 0-100
+  expectedRevenue Float? // value * probability
+  
+  // Customer & Contact
+  customerId  String?
+  customer    Customer?  @relation(fields: [customerId], references: [id], onDelete: SetNull)
+  
+  // Source lead (if converted from lead)
+  sourceLead  Lead?      @relation("LeadToDeal")
+  
+  // Tenant isolation
+  companyId   String
+  tenantCompany Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  
+  // Owner & Team
+  ownerId     String
+  owner       User       @relation("DealOwner", fields: [ownerId], references: [id])
+  
+  expectedCloseDate DateTime?
+  actualCloseDate   DateTime?
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+
+  // Relations
+  tasks       Task[]     @relation("DealTasks")
+  notes       Note[]     @relation("DealNotes")
+  activities  Activity[] @relation("DealActivities")
+
+  @@index([companyId, stageId])
+  @@index([companyId, status])
+  @@map("deals")
+}
+
+model Contact {
+  id          String   @id @default(uuid())
+  firstName   String
+  lastName    String
+  email       String
+  phone       String?
+  jobTitle    String?
+  department  String?
+  avatar      String?
+  isPrimary   Boolean  @default(false)
+  
+  // Customer link (optional)
+  customerId  String?
+  customer    Customer? @relation(fields: [customerId], references: [id], onDelete: SetNull)
+  
+  // Tenant isolation
+  companyId   String
+  tenantCompany Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  
+  // Creator
+  createdById String
+  createdBy   User     @relation("ContactCreator", fields: [createdById], references: [id])
+  
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Email relations
+  emails      Email[]
+
+  @@map("contacts")
+}
+
+enum TaskStatus {
+  TODO
+  IN_PROGRESS
+  COMPLETED
+  CANCELLED
+}
+
+enum TaskPriority {
+  LOW
+  MEDIUM
+  HIGH
+  URGENT
+}
+
+model Task {
+  id          String       @id @default(uuid())
+  title       String
+  description String?
+  status      TaskStatus   @default(TODO)
+  priority    TaskPriority @default(MEDIUM)
+  dueDate     DateTime?
+  completedAt DateTime?
+  
+  // Optional relations
+  customerId  String?
+  customer    Customer?    @relation(fields: [customerId], references: [id], onDelete: SetNull)
+  leadId      String?
+  lead        Lead?        @relation(fields: [leadId], references: [id], onDelete: SetNull)
+  dealId      String?
+  deal        Deal?        @relation("DealTasks", fields: [dealId], references: [id], onDelete: SetNull)
+  
+  // Tenant isolation
+  companyId   String
+  tenantCompany Company    @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  
+  // Creator & Assignee
+  createdById String
+  createdBy   User         @relation("TaskCreator", fields: [createdById], references: [id])
+  assignedToId String?
+  assignedTo  User?        @relation("TaskAssignee", fields: [assignedToId], references: [id])
+  
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+
+  @@map("tasks")
+}
+
+model Note {
+  id          String   @id @default(uuid())
+  content     String
+  isPinned    Boolean  @default(false)
+  
+  // Optional relations
+  customerId  String?
+  customer    Customer? @relation(fields: [customerId], references: [id], onDelete: SetNull)
+  leadId      String?
+  lead        Lead?     @relation(fields: [leadId], references: [id], onDelete: SetNull)
+  dealId      String?
+  deal        Deal?     @relation("DealNotes", fields: [dealId], references: [id], onDelete: SetNull)
+  
+  // Tenant isolation
+  companyId   String
+  tenantCompany Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  
+  // Creator
+  createdById String
+  createdBy   User     @relation("NoteCreator", fields: [createdById], references: [id])
+  
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@map("notes")
+}
+
+enum ActivityType {
+  CALL
+  EMAIL
+  MEETING
+  TASK_COMPLETED
+  NOTE_ADDED
+  LEAD_CREATED
+  LEAD_STATUS_CHANGED
+  LEAD_CONVERTED
+  LEAD_STAGE_CHANGED
+  CUSTOMER_CREATED
+  DEAL_CREATED
+  DEAL_STAGE_CHANGED
+  DEAL_WON
+  DEAL_LOST
+  OTHER
+}
+
+model Activity {
+  id          String       @id @default(uuid())
+  type        ActivityType
+  title       String
+  description String?
+  metadata    Json?
+  
+  // Optional relations
+  customerId  String?
+  customer    Customer?    @relation(fields: [customerId], references: [id], onDelete: SetNull)
+  leadId      String?
+  lead        Lead?        @relation(fields: [leadId], references: [id], onDelete: SetNull)
+  dealId      String?
+  deal        Deal?        @relation("DealActivities", fields: [dealId], references: [id], onDelete: SetNull)
+  
+  // Tenant isolation
+  companyId   String
+  tenantCompany Company    @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  
+  // Creator
+  createdById String
+  createdBy   User         @relation("ActivityCreator", fields: [createdById], references: [id])
+  
+  createdAt   DateTime     @default(now())
+
+  @@map("activities")
+}
+
+// ==================== PRODUCTS & SERVICES ====================
+
+model Product {
+  id          String   @id @default(uuid())
+  name        String
+  description String?
+  sku         String?
+  price       Float    @default(0)
+  currency    String   @default("USD")
+  category    String?
+  isActive    Boolean  @default(true)
+  
+  // Tenant isolation
+  companyId   String
+  tenantCompany Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@map("products")
+}
+
+model Service {
+  id          String   @id @default(uuid())
+  name        String
+  description String?
+  hourlyRate  Float?
+  fixedPrice  Float?
+  currency    String   @default("USD")
+  category    String?
+  isActive    Boolean  @default(true)
+  
+  // Tenant isolation
+  companyId   String
+  tenantCompany Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@map("services")
+}
+
+// ==================== ISSUES & SUPPORT ====================
+
+enum IssueStatus {
+  OPEN
+  IN_PROGRESS
+  RESOLVED
+  CLOSED
+}
+
+enum IssuePriority {
+  LOW
+  MEDIUM
+  HIGH
+  CRITICAL
+}
+
+enum IssueCategory {
+  BILLING
+  TECHNICAL
+  GENERAL
+  FEATURE_REQUEST
+  BUG_REPORT
+  OTHER
+}
+
+model Issue {
+  id          String        @id @default(uuid())
+  title       String
+  description String
+  status      IssueStatus   @default(OPEN)
+  priority    IssuePriority @default(MEDIUM)
+  category    IssueCategory @default(GENERAL)
+  
+  // Customer who created the issue
+  customerId  String
+  customer    User          @relation("IssueCustomer", fields: [customerId], references: [id])
+  
+  // Admin who resolved the issue (optional)
+  resolvedById String?
+  resolvedBy   User?        @relation("IssueResolver", fields: [resolvedById], references: [id])
+  resolvedAt   DateTime?
+  resolution   String?
+  
+  // Tenant isolation
+  companyId   String
+  tenantCompany Company     @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+
+  // Relations
+  calls       IssueCall[]
+
+  @@map("issues")
+}
+
+model IssueCall {
+  id          String   @id @default(uuid())
+  issueId     String
+  issue       Issue    @relation(fields: [issueId], references: [id], onDelete: Cascade)
+  
+  // Call details
+  callType    String   @default("OUTBOUND") // INBOUND, OUTBOUND
+  duration    Int      @default(0) // in seconds
+  status      String   @default("COMPLETED") // COMPLETED, MISSED, NO_ANSWER, BUSY
+  notes       String?
+  recordingUrl String?
+  
+  // Who made the call
+  callerId    String
+  caller      User     @relation(fields: [callerId], references: [id])
+  
+  createdAt   DateTime @default(now())
+
+  @@map("issue_calls")
+}
+
+// ==================== EMAIL SYSTEM ====================
+
+enum EmailStatus {
+  DRAFT
+  QUEUED
+  SENT
+  DELIVERED
+  OPENED
+  CLICKED
+  BOUNCED
+  FAILED
+}
+
+enum EmailDirection {
+  INBOUND
+  OUTBOUND
+}
+
+model Email {
+  id              String         @id @default(uuid())
+  messageId       String?        @unique // Gmail message ID
+  threadId        String?        // Gmail thread ID
+  direction       EmailDirection @default(OUTBOUND)
+  
+  // Email content
+  fromEmail       String
+  fromName        String?
+  toEmail         String
+  toName          String?
+  ccEmails        String[]       @default([])
+  bccEmails       String[]       @default([])
+  subject         String
+  bodyText        String?
+  bodyHtml        String?
+  
+  // Tracking
+  status          EmailStatus    @default(DRAFT)
+  sentAt          DateTime?
+  deliveredAt     DateTime?
+  openedAt        DateTime?
+  openCount       Int            @default(0)
+  clickedAt       DateTime?
+  clickCount      Int            @default(0)
+  bouncedAt       DateTime?
+  bounceReason    String?
+  
+  // Tracking pixel and link IDs
+  trackingId      String?        @unique @default(uuid())
+  
+  // Related entities (optional)
+  contactId       String?
+  contact         Contact?       @relation(fields: [contactId], references: [id], onDelete: SetNull)
+  leadId          String?
+  lead            Lead?          @relation(fields: [leadId], references: [id], onDelete: SetNull)
+  customerId      String?
+  customer        Customer?      @relation(fields: [customerId], references: [id], onDelete: SetNull)
+  
+  // Template used (optional)
+  templateId      String?
+  template        EmailTemplate? @relation(fields: [templateId], references: [id], onDelete: SetNull)
+  
+  // Tenant isolation
+  companyId       String
+  tenantCompany   Company        @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  
+  // Creator
+  createdById     String
+  createdBy       User           @relation("EmailSender", fields: [createdById], references: [id])
+  
+  // Metadata
+  metadata        Json?
+  attachments     Json?          // Array of attachment info
+  
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+
+  // Link tracking
+  trackedLinks    EmailLink[]
+
+  @@index([companyId, createdAt])
+  @@index([contactId])
+  @@index([leadId])
+  @@index([customerId])
+  @@index([trackingId])
+  @@map("emails")
+}
+
+model EmailTemplate {
+  id              String    @id @default(uuid())
+  name            String
+  subject         String
+  bodyHtml        String
+  bodyText        String?
+  category        String?
+  isActive        Boolean   @default(true)
+  
+  // Variables that can be replaced (e.g., {{firstName}}, {{companyName}})
+  variables       String[]  @default([])
+  
+  // Tenant isolation
+  companyId       String
+  tenantCompany   Company   @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  
+  // Creator
+  createdById     String
+  createdBy       User      @relation("TemplateCreator", fields: [createdById], references: [id])
+  
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  // Emails using this template
+  emails          Email[]
+
+  @@index([companyId])
+  @@map("email_templates")
+}
+
+model EmailLink {
+  id            String    @id @default(uuid())
+  emailId       String
+  email         Email     @relation(fields: [emailId], references: [id], onDelete: Cascade)
+  
+  originalUrl   String
+  trackingCode  String    @unique @default(uuid())
+  clickCount    Int       @default(0)
+  lastClickedAt DateTime?
+  
+  createdAt     DateTime  @default(now())
+
+  @@index([trackingCode])
+  @@map("email_links")
+}
+
+model GmailCredential {
+  id            String    @id @default(uuid())
+  userId        String    @unique
+  user          User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  accessToken   String
+  refreshToken  String
+  tokenExpiry   DateTime
+  email         String
+  
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  @@map("gmail_credentials")
+}
+
+// ==================== NOTIFICATIONS ====================
+
+enum NotificationType {
+  NEW_LEAD
+  LEAD_ASSIGNED
+  LEAD_STATUS_CHANGED
+  NEW_TASK
+  TASK_DUE_SOON
+  TASK_OVERDUE
+  TASK_COMPLETED
+  NEW_ISSUE
+  ISSUE_RESOLVED
+  NEW_CUSTOMER
+  CUSTOMER_JOINED
+  GENERAL
+}
+
+model Notification {
+  id          String           @id @default(uuid())
+  type        NotificationType
+  title       String
+  message     String
+  data        Json?            // Additional data (leadId, taskId, etc.)
+  
+  // Recipient
+  userId      String
+  user        User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  // Tenant isolation
+  companyId   String?
+  
+  // Status
+  isRead      Boolean          @default(false)
+  readAt      DateTime?
+  sentViaTelegram Boolean      @default(false)
+  telegramMessageId String?
+  
+  createdAt   DateTime         @default(now())
+
+  @@map("notifications")
+}
+
+// ==================== AI ASSISTANT ====================
+
+model AIConversation {
+  id          String   @id @default(uuid())
+  title       String?  // Auto-generated from first message
+  
+  // Messages stored as JSON array
+  // Each message: { role: 'user' | 'assistant', content: string, timestamp: string }
+  messages    Json     @default("[]")
+  
+  // User who owns this conversation
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  // Company context (for role-based data access)
+  companyId   String
+  company     Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  
+  // Metadata
+  messageCount Int     @default(0)
+  lastMessageAt DateTime?
+  
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([userId, companyId])
+  @@map("ai_conversations")
+}
+
