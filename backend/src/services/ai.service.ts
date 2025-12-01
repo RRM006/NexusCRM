@@ -3,13 +3,22 @@ import { prisma } from '../index';
 import { Role } from '@prisma/client';
 import { getToolsForRole, executeTool } from './mcp-tools';
 
-// Model to use - gemini-pro is universally available
-// For function calling (MCP tools), use gemini-1.5-pro or gemini-1.5-flash if available
-const GEMINI_MODEL = process.env.GEMINI_MODEL || 'gemini-pro';
+// Model to use - gemini-2.0-flash supports function calling and works on free tier
+// gemini-pro does NOT support function calling
+const GEMINI_MODEL = process.env.GEMINI_MODEL || 'gemini-2.0-flash';
 
 // Models that support function calling
-const FUNCTION_CALLING_MODELS = ['gemini-1.5-pro', 'gemini-1.5-flash', 'gemini-1.5-pro-latest', 'gemini-1.5-flash-latest', 'gemini-2.0-flash', 'gemini-2.0-flash-exp'];
+const FUNCTION_CALLING_MODELS = [
+  'gemini-1.5-pro', 'gemini-1.5-flash', 
+  'gemini-2.0-flash', 'gemini-2.0-flash-001', 'gemini-2.0-flash-exp', 'gemini-2.0-flash-lite',
+  'gemini-2.5-flash', 'gemini-2.5-pro',
+  'gemini-flash-latest', 'gemini-pro-latest'
+];
 const supportsFunctionCalling = FUNCTION_CALLING_MODELS.some(m => GEMINI_MODEL.includes(m));
+
+// Debug logging
+console.log(`[AI Service] Using model: ${GEMINI_MODEL}`);
+console.log(`[AI Service] Function calling supported: ${supportsFunctionCalling}`);
 
 // Schema types for Gemini function declarations
 const SchemaType = {
@@ -28,48 +37,59 @@ const genAI = GEMINI_API_KEY ? new GoogleGenerativeAI(GEMINI_API_KEY) : null;
 
 // System prompts based on role
 const SYSTEM_PROMPTS = {
-  ADMIN: `You are an AI assistant for a CRM system called NexusCRM. You are helping an ADMIN user who has full access to all company data.
+  ADMIN: `You are an AI assistant for NexusCRM. You have FULL ACCESS to CRM data and can perform real actions.
 
-You have access to CRM tools that allow you to:
-- Query leads, contacts, customers, tasks, issues, and activities
-- Create tasks and notes
-- Update lead statuses
-- Search across the CRM
-- Draft emails
+AVAILABLE ACTIONS - YOU MUST USE THESE TOOLS:
+- create_lead: Create new leads/prospects (requires firstName, lastName)
+- create_contact: Create new contacts
+- create_customer: Create new customers
+- create_task: Create tasks
+- create_note: Add notes to leads/customers
+- get_leads, get_contacts, get_customers, get_tasks, get_issues: Query data
+- update_lead_status: Update lead pipeline status
+- search_crm: Search across all CRM data
 
-IMPORTANT: When the user asks about CRM data, USE THE AVAILABLE TOOLS to fetch real data. Don't make up information.
+CRITICAL RULES:
+1. When user provides data to create something, IMMEDIATELY call the tool - don't ask for confirmation
+2. When user asks to "create a lead" with info like name, email, phone - USE create_lead tool RIGHT NOW
+3. After the tool executes, confirm what was created with the actual data returned
+4. NEVER pretend to create something - ALWAYS use the tool
+5. If tool fails, report the actual error
 
-When asked to perform actions (create task, update lead, etc.), use the appropriate tool and confirm the action was completed.
+Be concise. Use bullet points. Confirm actions with real data.`,
 
-Be concise but thorough. Format your responses nicely with bullet points and headers when appropriate.`,
+  STAFF: `You are an AI assistant for NexusCRM. You can access leads, contacts, tasks, and activities.
 
-  STAFF: `You are an AI assistant for a CRM system called NexusCRM. You are helping a STAFF member who has access to leads, contacts, tasks, and activities.
+AVAILABLE ACTIONS - USE THESE TOOLS:
+- create_lead: Create new leads (requires firstName, lastName)
+- create_contact: Create contacts
+- create_task: Create tasks
+- create_note: Add notes
+- get_leads, get_contacts, get_tasks: Query data
+- update_lead_status: Update lead status
+- search_crm: Search CRM
 
-You have access to CRM tools that allow you to:
-- Query leads, contacts, tasks
-- Create tasks and notes
-- Update lead statuses
-- Search the CRM
-- Draft emails
+CRITICAL RULES:
+1. When user provides info to create something, IMMEDIATELY call the tool
+2. Don't ask for confirmation - just create it with the provided data
+3. After tool executes, confirm with the actual returned data
+4. NEVER pretend - ALWAYS use tools for real actions
 
-Note: As staff, you don't have access to customer financial data or admin-only features.
+Be concise and professional.`,
 
-IMPORTANT: When the user asks about CRM data, USE THE AVAILABLE TOOLS to fetch real data. Don't make up information.
+  CUSTOMER: `You are an AI assistant for NexusCRM. You can view your issues and tasks, and create support tickets.
 
-Be concise and professional in your responses.`,
+AVAILABLE ACTIONS:
+- get_issues: View your support issues
+- get_tasks: View tasks assigned to you
+- create_issue: Create a new support issue
 
-  CUSTOMER: `You are an AI assistant for a CRM system called NexusCRM. You are helping a CUSTOMER user.
+CRITICAL RULES:
+1. When user wants to create an issue, IMMEDIATELY use create_issue tool
+2. Confirm actions with actual data from the tool response
+3. NEVER pretend to do something - ALWAYS use the tool
 
-You have access to tools that allow you to:
-- View your support issues and their status
-- View tasks assigned to you
-- Create new support issues
-
-Note: As a customer, you can only see your own issues and tasks. You cannot access internal company data.
-
-IMPORTANT: When the user asks about their data, USE THE AVAILABLE TOOLS to fetch real information.
-
-Be friendly, helpful, and professional in your responses.`
+Be friendly and helpful.`
 };
 
 interface Message {
@@ -215,8 +235,13 @@ export async function generateAIResponse(
       const functionCalls = response.functionCalls();
       
       if (!functionCalls || functionCalls.length === 0) {
+        if (iterations === 0) {
+          console.log(`[AI] No function calls in response. Model gave direct answer.`);
+        }
         break;
       }
+      
+      console.log(`[AI] Received ${functionCalls.length} function call(s) from Gemini`);
       
       iterations++;
       
@@ -224,23 +249,36 @@ export async function generateAIResponse(
       const functionResponses: any[] = [];
       
       for (const call of functionCalls) {
-        console.log(`Executing MCP tool: ${call.name}`, call.args);
+        console.log(`[AI] Executing MCP tool: ${call.name}`);
+        console.log(`[AI] Tool args:`, JSON.stringify(call.args, null, 2));
         toolsUsed.push(call.name);
         
-        const toolResult = await executeTool(
-          call.name,
-          call.args as Record<string, any>,
-          userId,
-          companyId,
-          role
-        );
-        
-        functionResponses.push({
-          functionResponse: {
-            name: call.name,
-            response: toolResult
-          }
-        });
+        try {
+          const toolResult = await executeTool(
+            call.name,
+            call.args as Record<string, any>,
+            userId,
+            companyId,
+            role
+          );
+          
+          console.log(`[AI] Tool result for ${call.name}:`, JSON.stringify(toolResult, null, 2));
+          
+          functionResponses.push({
+            functionResponse: {
+              name: call.name,
+              response: toolResult
+            }
+          });
+        } catch (toolError: any) {
+          console.error(`[AI] Tool execution error for ${call.name}:`, toolError);
+          functionResponses.push({
+            functionResponse: {
+              name: call.name,
+              response: { success: false, error: toolError.message || 'Tool execution failed' }
+            }
+          });
+        }
       }
 
       // Send function responses back to the model

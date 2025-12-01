@@ -7,6 +7,7 @@
 
 import { prisma } from '../index';
 import { Role } from '@prisma/client';
+import { linearService, LINEAR_PRIORITY_MAP } from './linear.service';
 
 // Tool parameter schemas (following MCP/OpenAI function calling format)
 export interface ToolDefinition {
@@ -228,6 +229,26 @@ export const CRM_TOOLS: ToolDefinition[] = [
     allowedRoles: ['ADMIN', 'STAFF']
   },
   {
+    name: 'update_task_status',
+    description: 'Update the status of a task. Use this when user wants to mark a task as completed, in progress, etc.',
+    parameters: {
+      type: 'object',
+      properties: {
+        taskId: {
+          type: 'string',
+          description: 'The ID of the task to update'
+        },
+        status: {
+          type: 'string',
+          enum: ['TODO', 'IN_PROGRESS', 'COMPLETED', 'CANCELLED'],
+          description: 'New status for the task'
+        }
+      },
+      required: ['taskId', 'status']
+    },
+    allowedRoles: ['ADMIN', 'STAFF', 'CUSTOMER']
+  },
+  {
     name: 'create_note',
     description: 'Create a note for a lead or customer. Use this to record important information.',
     parameters: {
@@ -285,42 +306,45 @@ export const CRM_TOOLS: ToolDefinition[] = [
   },
   {
     name: 'create_lead',
-    description: 'Create a new lead in the sales pipeline. Use this when user wants to add a new potential customer or opportunity.',
+    description: 'Create a new lead/prospect in the sales pipeline. ALWAYS use this tool when user wants to add a new lead, prospect, or potential customer. Call this immediately with the provided information.',
     parameters: {
       type: 'object',
       properties: {
-        title: {
+        firstName: {
           type: 'string',
-          description: 'Title/name of the lead opportunity'
+          description: 'First name of the lead/prospect (required)'
         },
-        description: {
+        lastName: {
           type: 'string',
-          description: 'Description of the lead'
+          description: 'Last name of the lead/prospect (required)'
         },
-        value: {
-          type: 'number',
-          description: 'Estimated deal value in dollars'
+        company: {
+          type: 'string',
+          description: 'Company/organization name'
+        },
+        email: {
+          type: 'string',
+          description: 'Email address of the lead'
+        },
+        phone: {
+          type: 'string',
+          description: 'Phone number of the lead'
         },
         source: {
           type: 'string',
           enum: ['WEBSITE', 'REFERRAL', 'COLD_CALL', 'ADVERTISEMENT', 'SOCIAL_MEDIA', 'EMAIL', 'EVENT', 'OTHER'],
-          description: 'How the lead was acquired'
+          description: 'How the lead was acquired (website, referral, cold_call, advertisement, social_media, email, event, other)'
         },
-        priority: {
+        description: {
           type: 'string',
-          enum: ['LOW', 'MEDIUM', 'HIGH', 'URGENT'],
-          description: 'Priority level'
+          description: 'Additional notes or description about the lead'
         },
-        contactEmail: {
-          type: 'string',
-          description: 'Contact email for the lead'
-        },
-        contactPhone: {
-          type: 'string',
-          description: 'Contact phone for the lead'
+        value: {
+          type: 'number',
+          description: 'Estimated deal value in dollars'
         }
       },
-      required: ['title']
+      required: ['firstName', 'lastName']
     },
     allowedRoles: ['ADMIN', 'STAFF']
   },
@@ -580,28 +604,57 @@ export async function executeTool(
       }
 
       case 'get_issues': {
-        const where: any = { companyId };
-        if (params.status) where.status = params.status;
-        if (params.priority) where.priority = params.priority;
-        if (role === 'CUSTOMER') where.customerId = userId; // Customers only see their issues
+        // Use ExternalIssue model (Linear integration)
+        const where: any = { tenantId: companyId };
+        if (params.status) {
+          // Map legacy status to Linear status names
+          const statusMap: Record<string, string[]> = {
+            'OPEN': ['Todo', 'Backlog', 'Triage'],
+            'IN_PROGRESS': ['In Progress'],
+            'RESOLVED': ['Done', 'Completed'],
+            'CLOSED': ['Canceled', 'Cancelled']
+          };
+          const mappedStatuses = statusMap[params.status] || [params.status];
+          where.status = { in: mappedStatuses };
+        }
+        if (role === 'CUSTOMER') where.createdById = userId; // Customers only see their issues
         
-        const issues = await prisma.issue.findMany({
+        const issues = await prisma.externalIssue.findMany({
           where,
           take: params.limit || 10,
           orderBy: { createdAt: 'desc' },
           select: {
             id: true,
+            linearIssueId: true,
             title: true,
             status: true,
             priority: true,
-            category: true,
             description: true,
-            resolution: true,
+            linearUrl: true,
             createdAt: true,
-            customer: { select: { name: true } }
+            createdById: true
           }
         });
-        return { success: true, result: issues };
+        
+        // Map priority numbers to labels
+        const priorityLabels: Record<number, string> = {
+          0: 'No Priority',
+          1: 'Urgent',
+          2: 'High',
+          3: 'Medium',
+          4: 'Low'
+        };
+        
+        const mappedIssues = issues.map(i => ({
+          ...i,
+          priorityLabel: priorityLabels[i.priority] || 'Medium',
+          // Map Linear status to legacy status for display
+          legacyStatus: i.status === 'Done' || i.status === 'Completed' ? 'RESOLVED' :
+                       i.status === 'In Progress' ? 'IN_PROGRESS' :
+                       i.status === 'Canceled' || i.status === 'Cancelled' ? 'CLOSED' : 'OPEN'
+        }));
+        
+        return { success: true, result: mappedIssues };
       }
 
       case 'get_customers': {
@@ -650,6 +703,7 @@ export async function executeTool(
       }
 
       case 'get_dashboard_stats': {
+        // Use tenantId for ExternalIssue (Linear integration)
         const [
           totalLeads,
           newLeads,
@@ -666,8 +720,13 @@ export async function executeTool(
           prisma.task.count({ where: { companyId } }),
           prisma.task.count({ where: { companyId, status: { in: ['TODO', 'IN_PROGRESS'] } } }),
           prisma.customer.count({ where: { companyId } }),
-          prisma.issue.count({ where: { companyId } }),
-          prisma.issue.count({ where: { companyId, status: { in: ['OPEN', 'IN_PROGRESS'] } } })
+          prisma.externalIssue.count({ where: { tenantId: companyId } }),
+          prisma.externalIssue.count({ 
+            where: { 
+              tenantId: companyId, 
+              status: { notIn: ['Done', 'Completed', 'Canceled', 'Cancelled'] } 
+            } 
+          })
         ]);
 
         const pipelineValue = await prisma.lead.aggregate({
@@ -741,6 +800,56 @@ export async function executeTool(
         return { success: true, result: { message: `Lead status updated to ${params.status}`, lead: updated } };
       }
 
+      case 'update_task_status': {
+        // Find the task first
+        const task = await prisma.task.findFirst({
+          where: { id: params.taskId, companyId }
+        });
+        
+        if (!task) {
+          return { success: false, error: 'Task not found' };
+        }
+        
+        // For customers, only allow updating their assigned tasks
+        if (role === 'CUSTOMER' && task.assignedToId !== userId) {
+          return { success: false, error: 'You can only update tasks assigned to you' };
+        }
+        
+        const updateData: any = { status: params.status };
+        
+        // Set completedAt if marking as completed
+        if (params.status === 'COMPLETED' && task.status !== 'COMPLETED') {
+          updateData.completedAt = new Date();
+        }
+        
+        const updatedTask = await prisma.task.update({
+          where: { id: params.taskId },
+          data: updateData,
+          select: {
+            id: true,
+            title: true,
+            status: true,
+            priority: true,
+            completedAt: true
+          }
+        });
+        
+        // Log activity if completed
+        if (params.status === 'COMPLETED' && task.status !== 'COMPLETED') {
+          await prisma.activity.create({
+            data: {
+              type: 'TASK_COMPLETED',
+              title: `Task "${task.title}" completed`,
+              description: `Task marked as completed via AI assistant`,
+              companyId,
+              createdById: userId
+            }
+          });
+        }
+        
+        return { success: true, result: { message: `Task status updated to ${params.status}`, task: updatedTask } };
+      }
+
       case 'create_note': {
         const note = await prisma.note.create({
           data: {
@@ -762,38 +871,116 @@ export async function executeTool(
       }
 
       case 'create_issue': {
-        const issue = await prisma.issue.create({
-          data: {
-            title: params.title,
-            description: params.description,
-            category: params.category || 'GENERAL',
-            priority: params.priority || 'MEDIUM',
-            customerId: userId,
-            companyId
-          },
-          select: {
-            id: true,
-            title: true,
-            status: true,
-            priority: true,
-            category: true
-          }
+        // Check if Linear is configured
+        if (!linearService.isConfigured()) {
+          return { success: false, error: 'Linear integration is not configured. Please contact admin.' };
+        }
+        
+        // Get user info for description
+        const user = await prisma.user.findUnique({
+          where: { id: userId },
+          select: { name: true, email: true }
         });
-        return { success: true, result: { message: 'Issue created successfully', issue } };
+        
+        // Build description with metadata
+        const fullDescription = [
+          params.description,
+          '',
+          '---',
+          `**Category:** ${params.category || 'GENERAL'}`,
+          `**Created by:** ${user?.name || 'Unknown'} (${user?.email || 'Unknown'}) [Customer via AI]`,
+          `**Tenant:** ${companyId}`,
+        ].join('\n');
+        
+        // Create issue in Linear
+        const linearIssue = await linearService.createIssue({
+          title: params.title,
+          description: fullDescription,
+          priority: params.priority as keyof typeof LINEAR_PRIORITY_MAP,
+        });
+        
+        // Save reference in our database
+        const externalIssue = await prisma.externalIssue.create({
+          data: {
+            linearIssueId: linearIssue.id,
+            linearUrl: linearIssue.url,
+            title: linearIssue.title,
+            description: params.description || null,
+            status: linearIssue.state?.name || 'Todo',
+            priority: linearIssue.priority,
+            createdById: userId,
+            tenantId: companyId,
+          },
+        });
+        
+        // Log activity
+        await prisma.activity.create({
+          data: {
+            type: 'OTHER',
+            title: `New issue created via AI: "${params.title}"`,
+            description: `Issue created in Linear (${linearIssue.identifier})`,
+            companyId,
+            createdById: userId,
+            metadata: {
+              linearIssueId: linearIssue.id,
+              linearUrl: linearIssue.url,
+              linearIdentifier: linearIssue.identifier,
+            },
+          },
+        });
+        
+        return { 
+          success: true, 
+          result: { 
+            message: 'Issue created successfully in Linear', 
+            issue: {
+              id: externalIssue.id,
+              linearId: linearIssue.identifier,
+              title: linearIssue.title,
+              status: linearIssue.state?.name || 'Todo',
+              priority: params.priority || 'MEDIUM',
+              url: linearIssue.url
+            }
+          } 
+        };
       }
 
       case 'create_lead': {
+        // Build title from first + last name
+        const leadTitle = `${params.firstName} ${params.lastName}`.trim();
+        
+        // Map source to enum value
+        const sourceMap: Record<string, string> = {
+          'website': 'WEBSITE',
+          'referral': 'REFERRAL',
+          'cold_call': 'COLD_CALL',
+          'advertisement': 'ADVERTISEMENT',
+          'social_media': 'SOCIAL_MEDIA',
+          'email': 'EMAIL',
+          'event': 'EVENT',
+          'other': 'OTHER'
+        };
+        const source = sourceMap[(params.source || '').toLowerCase()] || 'OTHER';
+
+        // Build description including company if provided
+        let fullDescription = params.description || '';
+        if (params.company) {
+          fullDescription = `Company: ${params.company}${fullDescription ? '\n' + fullDescription : ''}`;
+        }
+
         const lead = await prisma.lead.create({
           data: {
-            title: params.title,
-            description: params.description,
+            title: leadTitle,
+            description: fullDescription || null,
             value: params.value || 0,
-            source: params.source || 'OTHER',
-            priority: params.priority || 'MEDIUM',
+            source: source as any,
+            priority: 1, // Default priority
             status: 'NEW',
-            contactEmail: params.contactEmail,
-            contactPhone: params.contactPhone,
+            contactName: leadTitle,
+            contactEmail: params.email || null,
+            contactPhone: params.phone || null,
             companyId,
+            createdById: userId,
             assignedToId: userId
           },
           select: {
@@ -802,7 +989,9 @@ export async function executeTool(
             status: true,
             value: true,
             priority: true,
-            source: true
+            source: true,
+            contactEmail: true,
+            contactPhone: true
           }
         });
 
@@ -811,14 +1000,15 @@ export async function executeTool(
           data: {
             type: 'LEAD_CREATED',
             title: 'New lead created',
-            description: `Lead "${params.title}" was created via AI assistant`,
+            description: `Lead "${leadTitle}" was created via AI assistant`,
             leadId: lead.id,
             companyId,
             createdById: userId
           }
         });
 
-        return { success: true, result: { message: 'Lead created successfully', lead } };
+        console.log(`[MCP] Lead created: ${lead.id} - ${leadTitle}`);
+        return { success: true, result: { message: `Lead "${leadTitle}" created successfully!`, lead } };
       }
 
       case 'create_contact': {
@@ -826,10 +1016,11 @@ export async function executeTool(
           data: {
             firstName: params.firstName,
             lastName: params.lastName,
-            email: params.email,
+            email: params.email || `${params.firstName.toLowerCase()}.${params.lastName.toLowerCase()}@example.com`,
             phone: params.phone,
             jobTitle: params.jobTitle,
-            companyId
+            companyId,
+            createdById: userId
           },
           select: {
             id: true,
@@ -856,7 +1047,8 @@ export async function executeTool(
             phone: params.phone,
             company: params.company,
             status: params.status || 'ACTIVE',
-            companyId
+            companyId,
+            createdById: userId
           },
           select: {
             id: true,
