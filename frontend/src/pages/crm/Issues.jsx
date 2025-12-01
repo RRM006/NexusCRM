@@ -222,18 +222,16 @@ const Issues = () => {
         <div>
           <h1 className="text-2xl lg:text-3xl font-bold">Issues</h1>
           <p className="text-dark-500">
-            {isCustomer ? 'Submit and track your support issues' : 'Manage customer support issues'}
+            {isCustomer ? 'Submit and track your support issues' : 'Manage and resolve customer support issues'}
           </p>
         </div>
-        {isCustomer && (
-          <button
-            onClick={() => setShowCreateModal(true)}
-            className="btn btn-primary"
-          >
-            <Plus className="w-5 h-5" />
-            Create Issue
-          </button>
-        )}
+        <button
+          onClick={() => setShowCreateModal(true)}
+          className="btn btn-primary"
+        >
+          <Plus className="w-5 h-5" />
+          {isAdmin ? 'Create Issue' : 'Report Issue'}
+        </button>
       </div>
 
       {/* Filters */}
@@ -325,14 +323,12 @@ const Issues = () => {
             <AlertCircle className="w-16 h-16 mx-auto mb-4 text-dark-300" />
             <h3 className="text-lg font-semibold mb-2">No issues found</h3>
             <p className="text-dark-500 mb-6">
-              {isCustomer ? 'Create your first support issue' : 'No customer issues to review'}
+              {isCustomer ? 'Create your first support issue' : 'No issues to review yet'}
             </p>
-            {isCustomer && (
-              <button onClick={() => setShowCreateModal(true)} className="btn btn-primary">
-                <Plus className="w-5 h-5" />
-                Create Issue
-              </button>
-            )}
+            <button onClick={() => setShowCreateModal(true)} className="btn btn-primary">
+              <Plus className="w-5 h-5" />
+              {isAdmin ? 'Create Issue' : 'Report Issue'}
+            </button>
           </div>
         )}
 
@@ -549,6 +545,23 @@ const Issues = () => {
                   <h3 className="font-semibold mb-2">Description</h3>
                   <p className="text-dark-600 dark:text-dark-400 whitespace-pre-wrap">{selectedIssue.description}</p>
                 </div>
+
+                {/* Linear Link (Admin Only) */}
+                {isAdmin && selectedIssue.linearUrl && (
+                  <div className="flex items-center gap-2 p-3 rounded-lg bg-primary-50 dark:bg-primary-900/20 border border-primary-200 dark:border-primary-800">
+                    <span className="text-sm text-primary-700 dark:text-primary-300">
+                      Issue ID: {selectedIssue.identifier || selectedIssue.linearIssueId?.slice(0, 8)}
+                    </span>
+                    <a
+                      href={selectedIssue.linearUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-sm text-primary-600 hover:text-primary-700 underline ml-auto"
+                    >
+                      View in Linear →
+                    </a>
+                  </div>
+                )}
 
                 {/* Resolution (if resolved) */}
                 {selectedIssue.resolution && (

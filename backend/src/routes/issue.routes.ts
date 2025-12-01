@@ -7,7 +7,8 @@ import {
   deleteIssue,
   addCall,
   getCallHistory,
-  getIssueStats
+  getIssueStats,
+  getWorkflowStates,
 } from '../controllers/issue.controller';
 import { authenticate } from '../middleware/auth.middleware';
 import { tenantMiddleware, adminOnly, anyRole } from '../middleware/tenant.middleware';
@@ -41,11 +42,11 @@ const createIssueValidator = [
   body('category')
     .optional()
     .isIn(['BILLING', 'TECHNICAL', 'GENERAL', 'FEATURE_REQUEST', 'BUG_REPORT', 'OTHER'])
-    .withMessage('Invalid category')
+    .withMessage('Invalid category'),
 ];
 
 const updateIssueValidator = [
-  param('id').isUUID().withMessage('Invalid issue ID'),
+  param('id').notEmpty().withMessage('Issue ID is required'),
   body('status')
     .optional()
     .isIn(['OPEN', 'IN_PROGRESS', 'RESOLVED', 'CLOSED'])
@@ -56,7 +57,7 @@ const updateIssueValidator = [
     .withMessage('Invalid priority'),
   body('resolution')
     .optional()
-    .trim()
+    .trim(),
 ];
 
 const addCallValidator = [
@@ -75,20 +76,20 @@ const addCallValidator = [
     .withMessage('Invalid call status'),
   body('notes')
     .optional()
-    .trim()
+    .trim(),
 ];
 
 // Routes
 router.get('/', anyRole, getIssues);
 router.get('/stats', adminOnly, getIssueStats);
+router.get('/workflow-states', adminOnly, getWorkflowStates); // Get Linear workflow states
 router.get('/:id', anyRole, getIssue);
-router.post('/', createIssueValidator, validate, createIssue); // Customer only (checked in controller)
-router.put('/:id', adminOnly, updateIssueValidator, validate, updateIssue);
+router.post('/', anyRole, createIssueValidator, validate, createIssue); // Any role can create issues
+router.put('/:id', adminOnly, updateIssueValidator, validate, updateIssue); // Admin resolves issues
 router.delete('/:id', adminOnly, deleteIssue);
 
-// Call routes
+// Call routes (legacy - only works with old Issue model)
 router.post('/:id/calls', adminOnly, addCallValidator, validate, addCall);
 router.get('/:id/calls', anyRole, getCallHistory);
 
 export default router;
-

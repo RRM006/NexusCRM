@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Bell, Check, Loader2, MessageCircle, User, Clock, AlertCircle } from 'lucide-react'
+import { Bell, Check, Loader2, MessageCircle, User, Clock, AlertCircle, Trash2, X } from 'lucide-react'
 import { telegramAPI } from '../services/api'
 import { useAuth } from '../context/AuthContext'
 import toast from 'react-hot-toast'
@@ -82,6 +82,28 @@ const NotificationBell = () => {
     }
   }
 
+  const deleteNotification = async (id, e) => {
+    e.stopPropagation()
+    try {
+      await telegramAPI.deleteNotification(id)
+      setNotifications(prev => prev.filter(n => n.id !== id))
+      toast.success('Notification deleted')
+    } catch (error) {
+      toast.error('Failed to delete notification')
+    }
+  }
+
+  const clearAllNotifications = async () => {
+    try {
+      await telegramAPI.deleteAllNotifications()
+      setNotifications([])
+      setUnreadCount(0)
+      toast.success('All notifications cleared')
+    } catch (error) {
+      toast.error('Failed to clear notifications')
+    }
+  }
+
   const getNotificationIcon = (type) => {
     const icons = {
       NEW_LEAD: '🎯',
@@ -149,14 +171,25 @@ const NotificationBell = () => {
             {/* Header */}
             <div className="p-4 border-b border-dark-200 dark:border-dark-700 flex items-center justify-between">
               <h3 className="font-semibold">Notifications</h3>
-              {unreadCount > 0 && (
-                <button
-                  onClick={markAllAsRead}
-                  className="text-sm text-primary-500 hover:text-primary-600"
-                >
-                  Mark all read
-                </button>
-              )}
+              <div className="flex items-center gap-2">
+                {unreadCount > 0 && (
+                  <button
+                    onClick={markAllAsRead}
+                    className="text-xs text-primary-500 hover:text-primary-600"
+                  >
+                    Mark all read
+                  </button>
+                )}
+                {notifications.length > 0 && (
+                  <button
+                    onClick={clearAllNotifications}
+                    className="text-xs text-red-500 hover:text-red-600"
+                    title="Clear all notifications"
+                  >
+                    Clear all
+                  </button>
+                )}
+              </div>
             </div>
 
             {/* Content */}
@@ -177,7 +210,8 @@ const NotificationBell = () => {
                       key={notification.id}
                       initial={{ opacity: 0 }}
                       animate={{ opacity: 1 }}
-                      className={`p-4 hover:bg-dark-50 dark:hover:bg-dark-700/50 cursor-pointer transition-colors ${
+                      exit={{ opacity: 0, height: 0 }}
+                      className={`p-4 hover:bg-dark-50 dark:hover:bg-dark-700/50 cursor-pointer transition-colors group ${
                         !notification.isRead ? 'bg-primary-50 dark:bg-primary-900/20' : ''
                       }`}
                       onClick={() => !notification.isRead && markAsRead(notification.id)}
@@ -204,9 +238,18 @@ const NotificationBell = () => {
                             )}
                           </div>
                         </div>
-                        {!notification.isRead && (
-                          <span className="w-2 h-2 rounded-full bg-primary-500 flex-shrink-0 mt-2" />
-                        )}
+                        <div className="flex items-center gap-1">
+                          {!notification.isRead && (
+                            <span className="w-2 h-2 rounded-full bg-primary-500 flex-shrink-0" />
+                          )}
+                          <button
+                            onClick={(e) => deleteNotification(notification.id, e)}
+                            className="p-1.5 opacity-0 group-hover:opacity-100 hover:bg-red-100 dark:hover:bg-red-900/30 rounded-lg transition-all"
+                            title="Delete notification"
+                          >
+                            <X className="w-3.5 h-3.5 text-red-500" />
+                          </button>
+                        </div>
                       </div>
                     </motion.div>
                   ))}

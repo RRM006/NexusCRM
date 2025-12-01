@@ -276,5 +276,58 @@ router.put('/notifications/read-all', authenticate, async (req: AuthRequest, res
   }
 });
 
+/**
+ * @route   DELETE /api/telegram/notifications/:id
+ * @desc    Delete a single notification
+ * @access  Private
+ */
+router.delete('/notifications/:id', authenticate, async (req: AuthRequest, res: Response, next: NextFunction) => {
+  try {
+    const userId = req.user!.id;
+    const { id } = req.params;
+
+    const notification = await prisma.notification.deleteMany({
+      where: { id, userId }
+    });
+
+    if (notification.count === 0) {
+      res.status(404).json({
+        success: false,
+        message: 'Notification not found'
+      });
+      return;
+    }
+
+    res.json({
+      success: true,
+      message: 'Notification deleted'
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+/**
+ * @route   DELETE /api/telegram/notifications
+ * @desc    Delete all notifications for user
+ * @access  Private
+ */
+router.delete('/notifications', authenticate, async (req: AuthRequest, res: Response, next: NextFunction) => {
+  try {
+    const userId = req.user!.id;
+
+    await prisma.notification.deleteMany({
+      where: { userId }
+    });
+
+    res.json({
+      success: true,
+      message: 'All notifications deleted'
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
 export default router;
 

@@ -1,6 +1,7 @@
 import { Request, Response } from 'express';
 import jwt from 'jsonwebtoken';
 import { prisma } from '../index';
+import { linearService, LinearApiError, PRIORITY_LABEL_MAP } from '../services/linear.service';
 
 // Pre-built super admin credentials (should be in env for production)
 const SUPER_ADMIN_EMAIL = process.env.SUPER_ADMIN_EMAIL || 'superadmin@nexuscrm.com';
@@ -603,6 +604,364 @@ export const getCompanyDetails = async (req: Request, res: Response): Promise<vo
     res.status(500).json({
       success: false,
       message: 'Failed to fetch company details'
+    });
+  }
+};
+
+// ==================== ISSUES MANAGEMENT ====================
+
+/**
+ * Helper to map Linear status to display status
+ */
+function mapLinearStatusToDisplay(stateType: string): string {
+  const statusMap: Record<string, string> = {
+    triage: 'OPEN',
+    backlog: 'OPEN',
+    unstarted: 'OPEN',
+    started: 'IN_PROGRESS',
+    completed: 'RESOLVED',
+    canceled: 'CLOSED',
+  };
+  return statusMap[stateType] || 'OPEN';
+}
+
+/**
+ * Get issues created by Company Admins (for Super Admin)
+ * Customer issues are handled by Company Admins, not Super Admin
+ */
+export const getAllIssues = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const page = parseInt(req.query.page as string) || 1;
+    const limit = parseInt(req.query.limit as string) || 20;
+    const status = req.query.status as string;
+    const companyId = req.query.companyId as string;
+
+    // Get all users who are ADMIN role in any company
+    const adminUsers = await prisma.userCompanyRole.findMany({
+      where: { role: 'ADMIN' },
+      select: { userId: true }
+    });
+    const adminUserIds = adminUsers.map(u => u.userId);
+
+    // Build where clause - only issues created by company admins
+    const where: any = {
+      createdById: { in: adminUserIds }
+    };
+    if (companyId) {
+      where.tenantId = companyId;
+    }
+
+    // Get external issues created by admins with company and creator info
+    const [externalIssues, total] = await Promise.all([
+      prisma.externalIssue.findMany({
+        where,
+        orderBy: { createdAt: 'desc' },
+        include: {
+          tenantCompany: {
+            select: { id: true, name: true, slug: true }
+          }
+        }
+      }),
+      prisma.externalIssue.count({ where })
+    ]);
+
+    // Get creator info for all issues
+    const creatorIds = externalIssues.map(ei => ei.createdById).filter(Boolean) as string[];
+    const creators = await prisma.user.findMany({
+      where: { id: { in: creatorIds } },
+      select: { id: true, name: true, email: true }
+    });
+    const creatorMap = new Map(creators.map(c => [c.id, c]));
+
+    // Fetch Linear issues to get current status
+    let enrichedIssues: any[] = [];
+    
+    if (linearService.isConfigured()) {
+      try {
+        const { issues: linearIssues } = await linearService.getIssues({ first: 100 });
+        const linearMap = new Map(linearIssues.map(li => [li.id, li]));
+
+        enrichedIssues = externalIssues.map(ei => {
+          const linearIssue = linearMap.get(ei.linearIssueId);
+          const currentStatus = linearIssue ? mapLinearStatusToDisplay(linearIssue.state?.type || '') : 'OPEN';
+          const creator = ei.createdById ? creatorMap.get(ei.createdById) : null;
+          
+          // Filter by status if provided
+          if (status && currentStatus !== status) {
+            return null;
+          }
+
+          return {
+            id: ei.id,
+            linearIssueId: ei.linearIssueId,
+            identifier: linearIssue?.identifier || ei.linearIssueId.slice(0, 8),
+            title: ei.title,
+            description: ei.description,
+            status: currentStatus,
+            linearStatus: linearIssue?.state?.name || ei.status,
+            priority: PRIORITY_LABEL_MAP[linearIssue?.priority || 0] || 'Medium',
+            priorityLevel: linearIssue?.priority || 0,
+            linearUrl: ei.linearUrl,
+            createdAt: ei.createdAt,
+            company: ei.tenantCompany,
+            createdBy: creator ? { id: creator.id, name: creator.name, email: creator.email } : null
+          };
+        }).filter(Boolean);
+      } catch (error) {
+        console.error('Error fetching Linear issues:', error);
+        // Fallback to local data
+        enrichedIssues = externalIssues.map(ei => {
+          const creator = ei.createdById ? creatorMap.get(ei.createdById) : null;
+          return {
+            id: ei.id,
+            linearIssueId: ei.linearIssueId,
+            identifier: ei.linearIssueId.slice(0, 8),
+            title: ei.title,
+            description: ei.description,
+            status: ei.status === 'Done' ? 'RESOLVED' : ei.status === 'In Progress' ? 'IN_PROGRESS' : 'OPEN',
+            linearStatus: ei.status,
+            priority: PRIORITY_LABEL_MAP[ei.priority] || 'Medium',
+            linearUrl: ei.linearUrl,
+            createdAt: ei.createdAt,
+            company: ei.tenantCompany,
+            createdBy: creator ? { id: creator.id, name: creator.name, email: creator.email } : null
+          };
+        });
+      }
+    } else {
+      // Linear not configured - use local data
+      enrichedIssues = externalIssues.map(ei => {
+        const creator = ei.createdById ? creatorMap.get(ei.createdById) : null;
+        return {
+          id: ei.id,
+          linearIssueId: ei.linearIssueId,
+          title: ei.title,
+          description: ei.description,
+          status: 'OPEN',
+          linearStatus: ei.status,
+          priority: 'Medium',
+          linearUrl: ei.linearUrl,
+          createdAt: ei.createdAt,
+          company: ei.tenantCompany,
+          createdBy: creator ? { id: creator.id, name: creator.name, email: creator.email } : null
+        };
+      });
+    }
+
+    // Apply pagination
+    const startIndex = (page - 1) * limit;
+    const paginatedIssues = enrichedIssues.slice(startIndex, startIndex + limit);
+
+    // Count by status
+    const statusCounts = {
+      OPEN: enrichedIssues.filter(i => i.status === 'OPEN').length,
+      IN_PROGRESS: enrichedIssues.filter(i => i.status === 'IN_PROGRESS').length,
+      RESOLVED: enrichedIssues.filter(i => i.status === 'RESOLVED').length,
+      CLOSED: enrichedIssues.filter(i => i.status === 'CLOSED').length,
+    };
+
+    res.json({
+      success: true,
+      data: {
+        issues: paginatedIssues,
+        stats: statusCounts,
+        pagination: {
+          page,
+          limit,
+          total: enrichedIssues.length,
+          totalPages: Math.ceil(enrichedIssues.length / limit)
+        }
+      }
+    });
+  } catch (error) {
+    console.error('Get all issues error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to fetch issues'
+    });
+  }
+};
+
+/**
+ * Update issue status (Super Admin can resolve any issue)
+ */
+export const updateIssueStatus = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const { issueId } = req.params;
+    const { status } = req.body;
+
+    // Find the external issue
+    const externalIssue = await prisma.externalIssue.findFirst({
+      where: {
+        OR: [
+          { id: issueId },
+          { linearIssueId: issueId }
+        ]
+      },
+      include: {
+        tenantCompany: { select: { id: true, name: true } }
+      }
+    });
+
+    if (!externalIssue) {
+      res.status(404).json({
+        success: false,
+        message: 'Issue not found'
+      });
+      return;
+    }
+
+    if (!linearService.isConfigured()) {
+      res.status(503).json({
+        success: false,
+        message: 'Linear integration is not configured'
+      });
+      return;
+    }
+
+    // Get workflow states to find the target state
+    const workflowStates = await linearService.getWorkflowStates();
+    
+    const statusTypeMap: Record<string, string> = {
+      OPEN: 'unstarted',
+      IN_PROGRESS: 'started',
+      RESOLVED: 'completed',
+      CLOSED: 'canceled',
+    };
+
+    const targetStateType = statusTypeMap[status];
+    const targetState = workflowStates.find(s => s.type === targetStateType);
+
+    if (!targetState) {
+      res.status(400).json({
+        success: false,
+        message: `Cannot map status "${status}" to a Linear workflow state`
+      });
+      return;
+    }
+
+    // Update in Linear
+    const updatedLinearIssue = await linearService.updateIssueState(
+      externalIssue.linearIssueId,
+      targetState.id
+    );
+
+    // Update local record
+    await prisma.externalIssue.update({
+      where: { id: externalIssue.id },
+      data: { status: updatedLinearIssue.state?.name || status }
+    });
+
+    // Create activity log
+    await prisma.activity.create({
+      data: {
+        type: 'OTHER',
+        title: `Issue "${externalIssue.title}" status updated to ${status}`,
+        description: `Super Admin updated issue status`,
+        companyId: externalIssue.tenantId,
+        createdById: externalIssue.createdById || externalIssue.tenantId, // Fallback
+        metadata: {
+          issueId: externalIssue.id,
+          linearIssueId: externalIssue.linearIssueId,
+          oldStatus: externalIssue.status,
+          newStatus: status
+        }
+      }
+    });
+
+    res.json({
+      success: true,
+      message: `Issue status updated to ${status}`,
+      data: {
+        issue: {
+          id: externalIssue.id,
+          title: externalIssue.title,
+          status,
+          linearStatus: updatedLinearIssue.state?.name
+        }
+      }
+    });
+  } catch (error) {
+    console.error('Update issue status error:', error);
+    
+    if (error instanceof LinearApiError) {
+      res.status(500).json({
+        success: false,
+        message: error.message,
+        code: error.code
+      });
+      return;
+    }
+
+    res.status(500).json({
+      success: false,
+      message: 'Failed to update issue status'
+    });
+  }
+};
+
+/**
+ * Get issue details (Super Admin)
+ */
+export const getIssueDetails = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const { issueId } = req.params;
+
+    const externalIssue = await prisma.externalIssue.findFirst({
+      where: {
+        OR: [
+          { id: issueId },
+          { linearIssueId: issueId }
+        ]
+      },
+      include: {
+        tenantCompany: { select: { id: true, name: true, slug: true } }
+      }
+    });
+
+    if (!externalIssue) {
+      res.status(404).json({
+        success: false,
+        message: 'Issue not found'
+      });
+      return;
+    }
+
+    let linearData: any = null;
+    if (linearService.isConfigured()) {
+      try {
+        linearData = await linearService.getIssue(externalIssue.linearIssueId);
+      } catch (e) {
+        console.error('Error fetching Linear issue:', e);
+      }
+    }
+
+    res.json({
+      success: true,
+      data: {
+        issue: {
+          id: externalIssue.id,
+          linearIssueId: externalIssue.linearIssueId,
+          identifier: linearData?.identifier || externalIssue.linearIssueId.slice(0, 8),
+          title: externalIssue.title,
+          description: externalIssue.description,
+          status: linearData ? mapLinearStatusToDisplay(linearData.state?.type || '') : 'OPEN',
+          linearStatus: linearData?.state?.name || externalIssue.status,
+          priority: PRIORITY_LABEL_MAP[linearData?.priority || externalIssue.priority] || 'Medium',
+          linearUrl: externalIssue.linearUrl,
+          createdAt: externalIssue.createdAt,
+          updatedAt: externalIssue.updatedAt,
+          company: externalIssue.tenantCompany,
+          createdById: externalIssue.createdById,
+          labels: linearData?.labels?.nodes || []
+        }
+      }
+    });
+  } catch (error) {
+    console.error('Get issue details error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to fetch issue details'
     });
   }
 };

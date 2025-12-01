@@ -184,7 +184,9 @@ export const telegramAPI = {
   testNotification: () => api.post('/telegram/test-notification'),
   getNotifications: (params) => api.get('/telegram/notifications', { params }),
   markAsRead: (id) => api.put(`/telegram/notifications/${id}/read`),
-  markAllAsRead: () => api.put('/telegram/notifications/read-all')
+  markAllAsRead: () => api.put('/telegram/notifications/read-all'),
+  deleteNotification: (id) => api.delete(`/telegram/notifications/${id}`),
+  deleteAllNotifications: () => api.delete('/telegram/notifications')
 }
 
 // AI Assistant API (with MCP tools)
@@ -272,6 +274,26 @@ export const superAdminAPI = {
     return axios.get(`${API_URL}/super-admin/users`, {
       headers: { Authorization: `Bearer ${token}` },
       params
+    })
+  },
+  // Issues management
+  getIssues: (params) => {
+    const token = localStorage.getItem('superAdminToken')
+    return axios.get(`${API_URL}/super-admin/issues`, {
+      headers: { Authorization: `Bearer ${token}` },
+      params
+    })
+  },
+  getIssueDetails: (issueId) => {
+    const token = localStorage.getItem('superAdminToken')
+    return axios.get(`${API_URL}/super-admin/issues/${issueId}`, {
+      headers: { Authorization: `Bearer ${token}` }
+    })
+  },
+  updateIssueStatus: (issueId, status) => {
+    const token = localStorage.getItem('superAdminToken')
+    return axios.patch(`${API_URL}/super-admin/issues/${issueId}/status`, { status }, {
+      headers: { Authorization: `Bearer ${token}` }
     })
   }
 }

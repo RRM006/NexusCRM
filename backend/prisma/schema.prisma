@@ -12,60 +12,60 @@ datasource db {
 // ==================== USER MANAGEMENT ====================
 
 model User {
-  id                String            @id @default(uuid())
-  name              String
-  email             String            @unique
-  password          String
-  avatar            String?
-  phone             String?           @unique
-  bio               String?
-  isEmailVerified   Boolean           @default(false)
-  isPhoneVerified   Boolean           @default(false)
-  
+  id              String  @id @default(uuid())
+  name            String
+  email           String  @unique
+  password        String
+  avatar          String?
+  phone           String? @unique
+  bio             String?
+  isEmailVerified Boolean @default(false)
+  isPhoneVerified Boolean @default(false)
+
   // Google OAuth Integration
-  googleId          String?           @unique
-  googleEmail       String?
-  googleAvatar      String?
-  googleLinkedAt    DateTime?
-  
+  googleId       String?   @unique
+  googleEmail    String?
+  googleAvatar   String?
+  googleLinkedAt DateTime?
+
   // Telegram Integration
-  telegramId        String?           @unique
-  telegramChatId    String?
-  telegramUsername  String?
-  telegramLinkedAt  DateTime?
-  
-  createdAt         DateTime          @default(now())
-  updatedAt         DateTime          @updatedAt
+  telegramId       String?   @unique
+  telegramChatId   String?
+  telegramUsername String?
+  telegramLinkedAt DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   // Relations
-  refreshTokens     RefreshToken[]
-  userCompanyRoles  UserCompanyRole[]
-  ownedCompanies    Company[]         @relation("CompanyOwner")
-  notifications     Notification[]
-  
+  refreshTokens    RefreshToken[]
+  userCompanyRoles UserCompanyRole[]
+  ownedCompanies   Company[]         @relation("CompanyOwner")
+  notifications    Notification[]
+
   // CRM Relations (as creator/owner)
-  createdCustomers  Customer[]        @relation("CustomerCreator")
-  createdLeads      Lead[]            @relation("LeadCreator")
-  assignedLeads     Lead[]            @relation("LeadAssignee")
-  ownedDeals        Deal[]            @relation("DealOwner")
-  createdContacts   Contact[]         @relation("ContactCreator")
-  createdTasks      Task[]            @relation("TaskCreator")
-  assignedTasks     Task[]            @relation("TaskAssignee")
-  createdNotes      Note[]            @relation("NoteCreator")
-  createdActivities Activity[]        @relation("ActivityCreator")
-  
+  createdCustomers  Customer[] @relation("CustomerCreator")
+  createdLeads      Lead[]     @relation("LeadCreator")
+  assignedLeads     Lead[]     @relation("LeadAssignee")
+  ownedDeals        Deal[]     @relation("DealOwner")
+  createdContacts   Contact[]  @relation("ContactCreator")
+  createdTasks      Task[]     @relation("TaskCreator")
+  assignedTasks     Task[]     @relation("TaskAssignee")
+  createdNotes      Note[]     @relation("NoteCreator")
+  createdActivities Activity[] @relation("ActivityCreator")
+
   // Issue Relations
-  createdIssues     Issue[]           @relation("IssueCustomer")
-  resolvedIssues    Issue[]           @relation("IssueResolver")
-  issueCalls        IssueCall[]
-  
+  createdIssues  Issue[]     @relation("IssueCustomer")
+  resolvedIssues Issue[]     @relation("IssueResolver")
+  issueCalls     IssueCall[]
+
   // Email Relations
-  sentEmails        Email[]           @relation("EmailSender")
-  emailTemplates    EmailTemplate[]   @relation("TemplateCreator")
-  gmailCredential   GmailCredential?
-  
+  sentEmails      Email[]          @relation("EmailSender")
+  emailTemplates  EmailTemplate[]  @relation("TemplateCreator")
+  gmailCredential GmailCredential?
+
   // AI Assistant
-  aiConversations   AIConversation[]
+  aiConversations AIConversation[]
 
   @@map("users")
 }
@@ -116,6 +116,7 @@ model Company {
   products         Product[]
   services         Service[]
   issues           Issue[]
+  externalIssues   ExternalIssue[]
   emails           Email[]
   emailTemplates   EmailTemplate[]
   aiConversations  AIConversation[]
@@ -157,38 +158,38 @@ enum CustomerStatus {
 }
 
 model Customer {
-  id          String         @id @default(uuid())
-  name        String
-  email       String
-  phone       String?
-  company     String?
-  address     String?
-  city        String?
-  country     String?
-  status      CustomerStatus @default(ACTIVE)
-  notes       String?
-  avatar      String?
-  totalSpent  Float          @default(0)
-  
+  id         String         @id @default(uuid())
+  name       String
+  email      String
+  phone      String?
+  company    String?
+  address    String?
+  city       String?
+  country    String?
+  status     CustomerStatus @default(ACTIVE)
+  notes      String?
+  avatar     String?
+  totalSpent Float          @default(0)
+
   // Tenant isolation
-  companyId   String
-  tenantCompany Company      @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  
+  companyId     String
+  tenantCompany Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
   // Creator
   createdById String
-  createdBy   User           @relation("CustomerCreator", fields: [createdById], references: [id])
-  
-  createdAt   DateTime       @default(now())
-  updatedAt   DateTime       @updatedAt
+  createdBy   User   @relation("CustomerCreator", fields: [createdById], references: [id])
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   // Relations
-  leads       Lead[]
-  deals       Deal[]
-  contacts    Contact[]
-  tasks       Task[]
+  leads         Lead[]
+  deals         Deal[]
+  contacts      Contact[]
+  tasks         Task[]
   customerNotes Note[]
-  activities  Activity[]
-  emails      Email[]
+  activities    Activity[]
+  emails        Email[]
 
   @@map("customers")
 }
@@ -221,46 +222,46 @@ model Lead {
   status      LeadStatus @default(NEW)
   source      LeadSource @default(OTHER)
   priority    Int        @default(1) // 1-5
-  
+
   // Pipeline stage (for Kanban view)
-  stageId     String?
-  stage       PipelineStage? @relation(fields: [stageId], references: [id], onDelete: SetNull)
-  stageEnteredAt DateTime?  // When lead entered current stage
-  stageOrder  Int        @default(0) // Order within the stage for drag-drop
-  
+  stageId        String?
+  stage          PipelineStage? @relation(fields: [stageId], references: [id], onDelete: SetNull)
+  stageEnteredAt DateTime? // When lead entered current stage
+  stageOrder     Int            @default(0) // Order within the stage for drag-drop
+
   // Contact info
   contactEmail String?
   contactPhone String?
   contactName  String?
-  
+
   // Customer link (optional)
-  customerId  String?
-  customer    Customer?  @relation(fields: [customerId], references: [id], onDelete: SetNull)
-  
+  customerId String?
+  customer   Customer? @relation(fields: [customerId], references: [id], onDelete: SetNull)
+
   // Converted to deal
   convertedToDealId String? @unique
   convertedToDeal   Deal?   @relation("LeadToDeal", fields: [convertedToDealId], references: [id], onDelete: SetNull)
-  
+
   // Tenant isolation
-  companyId   String
-  tenantCompany Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  
+  companyId     String
+  tenantCompany Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
   // Creator & Assignee
-  createdById String
-  createdBy   User       @relation("LeadCreator", fields: [createdById], references: [id])
+  createdById  String
+  createdBy    User    @relation("LeadCreator", fields: [createdById], references: [id])
   assignedToId String?
-  assignedTo  User?      @relation("LeadAssignee", fields: [assignedToId], references: [id])
-  
+  assignedTo   User?   @relation("LeadAssignee", fields: [assignedToId], references: [id])
+
   expectedCloseDate DateTime?
-  closedAt    DateTime?
-  createdAt   DateTime   @default(now())
-  updatedAt   DateTime   @updatedAt
+  closedAt          DateTime?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
 
   // Relations
-  tasks       Task[]
-  notes       Note[]
-  activities  Activity[]
-  emails      Email[]
+  tasks        Task[]
+  notes        Note[]
+  activities   Activity[]
+  emails       Email[]
   stageHistory LeadStageHistory[]
 
   @@index([companyId, stageId])
@@ -271,26 +272,26 @@ model Lead {
 // ==================== SALES PIPELINE ====================
 
 model PipelineStage {
-  id          String   @id @default(uuid())
+  id          String  @id @default(uuid())
   name        String
   description String?
-  color       String   @default("#6366f1") // Hex color for UI
-  order       Int      @default(0)  // Stage order in pipeline
-  isDefault   Boolean  @default(false) // Default stage for new leads
-  isClosed    Boolean  @default(false) // Won/Lost stages
-  isWon       Boolean  @default(false) // Specifically the Won stage
-  probability Int      @default(0)     // Win probability percentage (0-100)
-  
+  color       String  @default("#6366f1") // Hex color for UI
+  order       Int     @default(0) // Stage order in pipeline
+  isDefault   Boolean @default(false) // Default stage for new leads
+  isClosed    Boolean @default(false) // Won/Lost stages
+  isWon       Boolean @default(false) // Specifically the Won stage
+  probability Int     @default(0) // Win probability percentage (0-100)
+
   // Tenant isolation
-  companyId   String
+  companyId     String
   tenantCompany Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   // Relations
-  leads       Lead[]
-  deals       Deal[]
+  leads        Lead[]
+  deals        Deal[]
   stageHistory LeadStageHistory[]
 
   @@unique([companyId, name])
@@ -299,21 +300,21 @@ model PipelineStage {
 }
 
 model LeadStageHistory {
-  id          String   @id @default(uuid())
-  
-  leadId      String
-  lead        Lead     @relation(fields: [leadId], references: [id], onDelete: Cascade)
-  
-  stageId     String
-  stage       PipelineStage @relation(fields: [stageId], references: [id], onDelete: Cascade)
-  
-  enteredAt   DateTime @default(now())
-  exitedAt    DateTime?
-  duration    Int?     // Duration in minutes spent in this stage
-  
+  id String @id @default(uuid())
+
+  leadId String
+  lead   Lead   @relation(fields: [leadId], references: [id], onDelete: Cascade)
+
+  stageId String
+  stage   PipelineStage @relation(fields: [stageId], references: [id], onDelete: Cascade)
+
+  enteredAt DateTime  @default(now())
+  exitedAt  DateTime?
+  duration  Int? // Duration in minutes spent in this stage
+
   // Who moved it
-  movedById   String?
-  
+  movedById String?
+
   @@index([leadId, enteredAt])
   @@map("lead_stage_history")
 }
@@ -333,45 +334,45 @@ model Deal {
   value       Float      @default(0)
   currency    String     @default("USD")
   status      DealStatus @default(ACTIVE)
-  
+
   // Pipeline stage
-  stageId     String?
-  stage       PipelineStage? @relation(fields: [stageId], references: [id], onDelete: SetNull)
-  stageOrder  Int        @default(0) // Order within the stage
-  
+  stageId    String?
+  stage      PipelineStage? @relation(fields: [stageId], references: [id], onDelete: SetNull)
+  stageOrder Int            @default(0) // Order within the stage
+
   // Win/Loss details
-  wonAt       DateTime?
-  lostAt      DateTime?
-  lostReason  String?
-  
+  wonAt      DateTime?
+  lostAt     DateTime?
+  lostReason String?
+
   // Probability & Expected Revenue
-  probability Int        @default(50) // 0-100
+  probability     Int    @default(50) // 0-100
   expectedRevenue Float? // value * probability
-  
+
   // Customer & Contact
-  customerId  String?
-  customer    Customer?  @relation(fields: [customerId], references: [id], onDelete: SetNull)
-  
+  customerId String?
+  customer   Customer? @relation(fields: [customerId], references: [id], onDelete: SetNull)
+
   // Source lead (if converted from lead)
-  sourceLead  Lead?      @relation("LeadToDeal")
-  
+  sourceLead Lead? @relation("LeadToDeal")
+
   // Tenant isolation
-  companyId   String
-  tenantCompany Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  
+  companyId     String
+  tenantCompany Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
   // Owner & Team
-  ownerId     String
-  owner       User       @relation("DealOwner", fields: [ownerId], references: [id])
-  
+  ownerId String
+  owner   User   @relation("DealOwner", fields: [ownerId], references: [id])
+
   expectedCloseDate DateTime?
   actualCloseDate   DateTime?
-  createdAt   DateTime   @default(now())
-  updatedAt   DateTime   @updatedAt
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
 
   // Relations
-  tasks       Task[]     @relation("DealTasks")
-  notes       Note[]     @relation("DealNotes")
-  activities  Activity[] @relation("DealActivities")
+  tasks      Task[]     @relation("DealTasks")
+  notes      Note[]     @relation("DealNotes")
+  activities Activity[] @relation("DealActivities")
 
   @@index([companyId, stageId])
   @@index([companyId, status])
@@ -379,33 +380,33 @@ model Deal {
 }
 
 model Contact {
-  id          String   @id @default(uuid())
-  firstName   String
-  lastName    String
-  email       String
-  phone       String?
-  jobTitle    String?
-  department  String?
-  avatar      String?
-  isPrimary   Boolean  @default(false)
-  
+  id         String  @id @default(uuid())
+  firstName  String
+  lastName   String
+  email      String
+  phone      String?
+  jobTitle   String?
+  department String?
+  avatar     String?
+  isPrimary  Boolean @default(false)
+
   // Customer link (optional)
-  customerId  String?
-  customer    Customer? @relation(fields: [customerId], references: [id], onDelete: SetNull)
-  
+  customerId String?
+  customer   Customer? @relation(fields: [customerId], references: [id], onDelete: SetNull)
+
   // Tenant isolation
-  companyId   String
+  companyId     String
   tenantCompany Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  
+
   // Creator
   createdById String
-  createdBy   User     @relation("ContactCreator", fields: [createdById], references: [id])
-  
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  createdBy   User   @relation("ContactCreator", fields: [createdById], references: [id])
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   // Email relations
-  emails      Email[]
+  emails Email[]
 
   @@map("contacts")
 }
@@ -432,54 +433,54 @@ model Task {
   priority    TaskPriority @default(MEDIUM)
   dueDate     DateTime?
   completedAt DateTime?
-  
+
   // Optional relations
-  customerId  String?
-  customer    Customer?    @relation(fields: [customerId], references: [id], onDelete: SetNull)
-  leadId      String?
-  lead        Lead?        @relation(fields: [leadId], references: [id], onDelete: SetNull)
-  dealId      String?
-  deal        Deal?        @relation("DealTasks", fields: [dealId], references: [id], onDelete: SetNull)
-  
+  customerId String?
+  customer   Customer? @relation(fields: [customerId], references: [id], onDelete: SetNull)
+  leadId     String?
+  lead       Lead?     @relation(fields: [leadId], references: [id], onDelete: SetNull)
+  dealId     String?
+  deal       Deal?     @relation("DealTasks", fields: [dealId], references: [id], onDelete: SetNull)
+
   // Tenant isolation
-  companyId   String
-  tenantCompany Company    @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  
+  companyId     String
+  tenantCompany Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
   // Creator & Assignee
-  createdById String
-  createdBy   User         @relation("TaskCreator", fields: [createdById], references: [id])
+  createdById  String
+  createdBy    User    @relation("TaskCreator", fields: [createdById], references: [id])
   assignedToId String?
-  assignedTo  User?        @relation("TaskAssignee", fields: [assignedToId], references: [id])
-  
-  createdAt   DateTime     @default(now())
-  updatedAt   DateTime     @updatedAt
+  assignedTo   User?   @relation("TaskAssignee", fields: [assignedToId], references: [id])
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@map("tasks")
 }
 
 model Note {
-  id          String   @id @default(uuid())
-  content     String
-  isPinned    Boolean  @default(false)
-  
+  id       String  @id @default(uuid())
+  content  String
+  isPinned Boolean @default(false)
+
   // Optional relations
-  customerId  String?
-  customer    Customer? @relation(fields: [customerId], references: [id], onDelete: SetNull)
-  leadId      String?
-  lead        Lead?     @relation(fields: [leadId], references: [id], onDelete: SetNull)
-  dealId      String?
-  deal        Deal?     @relation("DealNotes", fields: [dealId], references: [id], onDelete: SetNull)
-  
+  customerId String?
+  customer   Customer? @relation(fields: [customerId], references: [id], onDelete: SetNull)
+  leadId     String?
+  lead       Lead?     @relation(fields: [leadId], references: [id], onDelete: SetNull)
+  dealId     String?
+  deal       Deal?     @relation("DealNotes", fields: [dealId], references: [id], onDelete: SetNull)
+
   // Tenant isolation
-  companyId   String
+  companyId     String
   tenantCompany Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  
+
   // Creator
   createdById String
-  createdBy   User     @relation("NoteCreator", fields: [createdById], references: [id])
-  
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  createdBy   User   @relation("NoteCreator", fields: [createdById], references: [id])
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@map("notes")
 }
@@ -508,24 +509,24 @@ model Activity {
   title       String
   description String?
   metadata    Json?
-  
+
   // Optional relations
-  customerId  String?
-  customer    Customer?    @relation(fields: [customerId], references: [id], onDelete: SetNull)
-  leadId      String?
-  lead        Lead?        @relation(fields: [leadId], references: [id], onDelete: SetNull)
-  dealId      String?
-  deal        Deal?        @relation("DealActivities", fields: [dealId], references: [id], onDelete: SetNull)
-  
+  customerId String?
+  customer   Customer? @relation(fields: [customerId], references: [id], onDelete: SetNull)
+  leadId     String?
+  lead       Lead?     @relation(fields: [leadId], references: [id], onDelete: SetNull)
+  dealId     String?
+  deal       Deal?     @relation("DealActivities", fields: [dealId], references: [id], onDelete: SetNull)
+
   // Tenant isolation
-  companyId   String
-  tenantCompany Company    @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  
+  companyId     String
+  tenantCompany Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
   // Creator
   createdById String
-  createdBy   User         @relation("ActivityCreator", fields: [createdById], references: [id])
-  
-  createdAt   DateTime     @default(now())
+  createdBy   User   @relation("ActivityCreator", fields: [createdById], references: [id])
+
+  createdAt DateTime @default(now())
 
   @@map("activities")
 }
@@ -533,41 +534,41 @@ model Activity {
 // ==================== PRODUCTS & SERVICES ====================
 
 model Product {
-  id          String   @id @default(uuid())
+  id          String  @id @default(uuid())
   name        String
   description String?
   sku         String?
-  price       Float    @default(0)
-  currency    String   @default("USD")
+  price       Float   @default(0)
+  currency    String  @default("USD")
   category    String?
-  isActive    Boolean  @default(true)
-  
+  isActive    Boolean @default(true)
+
   // Tenant isolation
-  companyId   String
+  companyId     String
   tenantCompany Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@map("products")
 }
 
 model Service {
-  id          String   @id @default(uuid())
+  id          String  @id @default(uuid())
   name        String
   description String?
   hourlyRate  Float?
   fixedPrice  Float?
-  currency    String   @default("USD")
+  currency    String  @default("USD")
   category    String?
-  isActive    Boolean  @default(true)
-  
+  isActive    Boolean @default(true)
+
   // Tenant isolation
-  companyId   String
+  companyId     String
   tenantCompany Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@map("services")
 }
@@ -597,6 +598,8 @@ enum IssueCategory {
   OTHER
 }
 
+// Legacy Issue model - kept for migration purposes
+// New issues should use ExternalIssue with Linear integration
 model Issue {
   id          String        @id @default(uuid())
   title       String
@@ -604,47 +607,76 @@ model Issue {
   status      IssueStatus   @default(OPEN)
   priority    IssuePriority @default(MEDIUM)
   category    IssueCategory @default(GENERAL)
-  
+
   // Customer who created the issue
-  customerId  String
-  customer    User          @relation("IssueCustomer", fields: [customerId], references: [id])
-  
+  customerId String
+  customer   User   @relation("IssueCustomer", fields: [customerId], references: [id])
+
   // Admin who resolved the issue (optional)
   resolvedById String?
-  resolvedBy   User?        @relation("IssueResolver", fields: [resolvedById], references: [id])
+  resolvedBy   User?     @relation("IssueResolver", fields: [resolvedById], references: [id])
   resolvedAt   DateTime?
   resolution   String?
-  
+
   // Tenant isolation
-  companyId   String
-  tenantCompany Company     @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  
-  createdAt   DateTime      @default(now())
-  updatedAt   DateTime      @updatedAt
+  companyId     String
+  tenantCompany Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   // Relations
-  calls       IssueCall[]
+  calls IssueCall[]
 
   @@map("issues")
 }
 
+// ExternalIssue - stores reference to Linear issues
+model ExternalIssue {
+  id String @id @default(uuid())
+
+  // Linear integration fields
+  linearIssueId String @unique // Linear's issue ID
+  linearUrl     String // Full URL to the issue in Linear
+
+  // Cached fields from Linear (for quick access)
+  title       String
+  description String?
+  status      String  @default("Todo") // Linear status name
+  priority    Int     @default(0) // Linear priority (0=No priority, 1=Urgent, 2=High, 3=Medium, 4=Low)
+
+  // Creator tracking
+  createdById String?
+
+  // Tenant isolation
+  tenantId      String
+  tenantCompany Company @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([tenantId, createdAt])
+  @@index([linearIssueId])
+  @@map("external_issues")
+}
+
 model IssueCall {
-  id          String   @id @default(uuid())
-  issueId     String
-  issue       Issue    @relation(fields: [issueId], references: [id], onDelete: Cascade)
-  
+  id      String @id @default(uuid())
+  issueId String
+  issue   Issue  @relation(fields: [issueId], references: [id], onDelete: Cascade)
+
   // Call details
-  callType    String   @default("OUTBOUND") // INBOUND, OUTBOUND
-  duration    Int      @default(0) // in seconds
-  status      String   @default("COMPLETED") // COMPLETED, MISSED, NO_ANSWER, BUSY
-  notes       String?
+  callType     String  @default("OUTBOUND") // INBOUND, OUTBOUND
+  duration     Int     @default(0) // in seconds
+  status       String  @default("COMPLETED") // COMPLETED, MISSED, NO_ANSWER, BUSY
+  notes        String?
   recordingUrl String?
-  
+
   // Who made the call
-  callerId    String
-  caller      User     @relation(fields: [callerId], references: [id])
-  
-  createdAt   DateTime @default(now())
+  callerId String
+  caller   User   @relation(fields: [callerId], references: [id])
+
+  createdAt DateTime @default(now())
 
   @@map("issue_calls")
 }
@@ -668,65 +700,65 @@ enum EmailDirection {
 }
 
 model Email {
-  id              String         @id @default(uuid())
-  messageId       String?        @unique // Gmail message ID
-  threadId        String?        // Gmail thread ID
-  direction       EmailDirection @default(OUTBOUND)
-  
+  id        String         @id @default(uuid())
+  messageId String?        @unique // Gmail message ID
+  threadId  String? // Gmail thread ID
+  direction EmailDirection @default(OUTBOUND)
+
   // Email content
-  fromEmail       String
-  fromName        String?
-  toEmail         String
-  toName          String?
-  ccEmails        String[]       @default([])
-  bccEmails       String[]       @default([])
-  subject         String
-  bodyText        String?
-  bodyHtml        String?
-  
+  fromEmail String
+  fromName  String?
+  toEmail   String
+  toName    String?
+  ccEmails  String[] @default([])
+  bccEmails String[] @default([])
+  subject   String
+  bodyText  String?
+  bodyHtml  String?
+
   // Tracking
-  status          EmailStatus    @default(DRAFT)
-  sentAt          DateTime?
-  deliveredAt     DateTime?
-  openedAt        DateTime?
-  openCount       Int            @default(0)
-  clickedAt       DateTime?
-  clickCount      Int            @default(0)
-  bouncedAt       DateTime?
-  bounceReason    String?
-  
+  status       EmailStatus @default(DRAFT)
+  sentAt       DateTime?
+  deliveredAt  DateTime?
+  openedAt     DateTime?
+  openCount    Int         @default(0)
+  clickedAt    DateTime?
+  clickCount   Int         @default(0)
+  bouncedAt    DateTime?
+  bounceReason String?
+
   // Tracking pixel and link IDs
-  trackingId      String?        @unique @default(uuid())
-  
+  trackingId String? @unique @default(uuid())
+
   // Related entities (optional)
-  contactId       String?
-  contact         Contact?       @relation(fields: [contactId], references: [id], onDelete: SetNull)
-  leadId          String?
-  lead            Lead?          @relation(fields: [leadId], references: [id], onDelete: SetNull)
-  customerId      String?
-  customer        Customer?      @relation(fields: [customerId], references: [id], onDelete: SetNull)
-  
+  contactId  String?
+  contact    Contact?  @relation(fields: [contactId], references: [id], onDelete: SetNull)
+  leadId     String?
+  lead       Lead?     @relation(fields: [leadId], references: [id], onDelete: SetNull)
+  customerId String?
+  customer   Customer? @relation(fields: [customerId], references: [id], onDelete: SetNull)
+
   // Template used (optional)
-  templateId      String?
-  template        EmailTemplate? @relation(fields: [templateId], references: [id], onDelete: SetNull)
-  
+  templateId String?
+  template   EmailTemplate? @relation(fields: [templateId], references: [id], onDelete: SetNull)
+
   // Tenant isolation
-  companyId       String
-  tenantCompany   Company        @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  
+  companyId     String
+  tenantCompany Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
   // Creator
-  createdById     String
-  createdBy       User           @relation("EmailSender", fields: [createdById], references: [id])
-  
+  createdById String
+  createdBy   User   @relation("EmailSender", fields: [createdById], references: [id])
+
   // Metadata
-  metadata        Json?
-  attachments     Json?          // Array of attachment info
-  
-  createdAt       DateTime       @default(now())
-  updatedAt       DateTime       @updatedAt
+  metadata    Json?
+  attachments Json? // Array of attachment info
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   // Link tracking
-  trackedLinks    EmailLink[]
+  trackedLinks EmailLink[]
 
   @@index([companyId, createdAt])
   @@index([contactId])
@@ -737,63 +769,63 @@ model Email {
 }
 
 model EmailTemplate {
-  id              String    @id @default(uuid())
-  name            String
-  subject         String
-  bodyHtml        String
-  bodyText        String?
-  category        String?
-  isActive        Boolean   @default(true)
-  
+  id       String  @id @default(uuid())
+  name     String
+  subject  String
+  bodyHtml String
+  bodyText String?
+  category String?
+  isActive Boolean @default(true)
+
   // Variables that can be replaced (e.g., {{firstName}}, {{companyName}})
-  variables       String[]  @default([])
-  
+  variables String[] @default([])
+
   // Tenant isolation
-  companyId       String
-  tenantCompany   Company   @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  
+  companyId     String
+  tenantCompany Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
   // Creator
-  createdById     String
-  createdBy       User      @relation("TemplateCreator", fields: [createdById], references: [id])
-  
-  createdAt       DateTime  @default(now())
-  updatedAt       DateTime  @updatedAt
+  createdById String
+  createdBy   User   @relation("TemplateCreator", fields: [createdById], references: [id])
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   // Emails using this template
-  emails          Email[]
+  emails Email[]
 
   @@index([companyId])
   @@map("email_templates")
 }
 
 model EmailLink {
-  id            String    @id @default(uuid())
-  emailId       String
-  email         Email     @relation(fields: [emailId], references: [id], onDelete: Cascade)
-  
+  id      String @id @default(uuid())
+  emailId String
+  email   Email  @relation(fields: [emailId], references: [id], onDelete: Cascade)
+
   originalUrl   String
   trackingCode  String    @unique @default(uuid())
   clickCount    Int       @default(0)
   lastClickedAt DateTime?
-  
-  createdAt     DateTime  @default(now())
+
+  createdAt DateTime @default(now())
 
   @@index([trackingCode])
   @@map("email_links")
 }
 
 model GmailCredential {
-  id            String    @id @default(uuid())
-  userId        String    @unique
-  user          User      @relation(fields: [userId], references: [id], onDelete: Cascade)
-  
-  accessToken   String
-  refreshToken  String
-  tokenExpiry   DateTime
-  email         String
-  
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
+  id     String @id @default(uuid())
+  userId String @unique
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  accessToken  String
+  refreshToken String
+  tokenExpiry  DateTime
+  email        String
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@map("gmail_credentials")
 }
@@ -816,26 +848,26 @@ enum NotificationType {
 }
 
 model Notification {
-  id          String           @id @default(uuid())
-  type        NotificationType
-  title       String
-  message     String
-  data        Json?            // Additional data (leadId, taskId, etc.)
-  
+  id      String           @id @default(uuid())
+  type    NotificationType
+  title   String
+  message String
+  data    Json? // Additional data (leadId, taskId, etc.)
+
   // Recipient
-  userId      String
-  user        User             @relation(fields: [userId], references: [id], onDelete: Cascade)
-  
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
   // Tenant isolation
-  companyId   String?
-  
+  companyId String?
+
   // Status
-  isRead      Boolean          @default(false)
-  readAt      DateTime?
-  sentViaTelegram Boolean      @default(false)
+  isRead            Boolean   @default(false)
+  readAt            DateTime?
+  sentViaTelegram   Boolean   @default(false)
   telegramMessageId String?
-  
-  createdAt   DateTime         @default(now())
+
+  createdAt DateTime @default(now())
 
   @@map("notifications")
 }
@@ -843,29 +875,28 @@ model Notification {
 // ==================== AI ASSISTANT ====================
 
 model AIConversation {
-  id          String   @id @default(uuid())
-  title       String?  // Auto-generated from first message
-  
+  id    String  @id @default(uuid())
+  title String? // Auto-generated from first message
+
   // Messages stored as JSON array
   // Each message: { role: 'user' | 'assistant', content: string, timestamp: string }
-  messages    Json     @default("[]")
-  
+  messages Json @default("[]")
+
   // User who owns this conversation
-  userId      String
-  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
   // Company context (for role-based data access)
-  companyId   String
-  company     Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  
+  companyId String
+  company   Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
   // Metadata
-  messageCount Int     @default(0)
+  messageCount  Int       @default(0)
   lastMessageAt DateTime?
-  
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@index([userId, companyId])
   @@map("ai_conversations")
 }
-

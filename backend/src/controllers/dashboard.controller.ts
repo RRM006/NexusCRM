@@ -2,6 +2,7 @@ import { Response } from 'express';
 import { prisma } from '../index';
 import { AuthenticatedRequest } from '../types';
 import { Role } from '@prisma/client';
+import { linearService, LinearApiError, PRIORITY_LABEL_MAP } from '../services/linear.service';
 
 export const getDashboardStats = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   try {
@@ -16,16 +17,15 @@ export const getDashboardStats = async (req: AuthenticatedRequest, res: Response
       contactsCount,
       tasksCount,
       openTasksCount,
-      openIssuesCount,
       leadsValue,
       wonDealsCount,
       wonDealsValue,
       recentCustomers,
       recentLeads,
-      recentIssues,
       recentActivities,
       leadsByStatus,
-      tasksByStatus
+      tasksByStatus,
+      externalIssues
     ] = await Promise.all([
       // Count customers (users with CUSTOMER role)
       prisma.userCompanyRole.count({ 
@@ -39,12 +39,6 @@ export const getDashboardStats = async (req: AuthenticatedRequest, res: Response
           companyId: req.companyId, 
           status: { in: ['TODO', 'IN_PROGRESS'] } 
         } 
-      }),
-      prisma.issue.count({
-        where: {
-          companyId: req.companyId,
-          status: { in: ['OPEN', 'IN_PROGRESS'] }
-        }
       }),
       prisma.lead.aggregate({
         where: { companyId: req.companyId },
@@ -85,16 +79,6 @@ export const getDashboardStats = async (req: AuthenticatedRequest, res: Response
           createdAt: true
         }
       }),
-      prisma.issue.findMany({
-        where: { companyId: req.companyId },
-        take: 5,
-        orderBy: { createdAt: 'desc' },
-        include: {
-          customer: {
-            select: { id: true, name: true }
-          }
-        }
-      }),
       prisma.activity.findMany({
         where: { companyId: req.companyId },
         take: 10,
@@ -114,8 +98,63 @@ export const getDashboardStats = async (req: AuthenticatedRequest, res: Response
         by: ['status'],
         where: { companyId: req.companyId },
         _count: { id: true }
+      }),
+      // Get external issues from Linear for this tenant
+      prisma.externalIssue.findMany({
+        where: { tenantId: req.companyId },
+        take: 5,
+        orderBy: { createdAt: 'desc' }
       })
     ]);
+
+    // Fetch Linear issues to get current status and transform for dashboard
+    let recentIssues: any[] = [];
+    let openIssuesCount = 0;
+
+    if (linearService.isConfigured() && externalIssues.length > 0) {
+      try {
+        const { issues: linearIssues } = await linearService.getIssues({ first: 50 });
+        const linearIssueMap = new Map(linearIssues.map(li => [li.id, li]));
+
+        // Transform external issues with Linear data
+        recentIssues = externalIssues.slice(0, 5).map(ei => {
+          const linearIssue = linearIssueMap.get(ei.linearIssueId);
+          const status = linearIssue?.state?.type === 'started' ? 'IN_PROGRESS' :
+                        linearIssue?.state?.type === 'completed' ? 'RESOLVED' :
+                        linearIssue?.state?.type === 'canceled' ? 'CLOSED' : 'OPEN';
+          return {
+            id: ei.id,
+            title: ei.title,
+            status,
+            linearStatus: linearIssue?.state?.name || ei.status,
+            priority: PRIORITY_LABEL_MAP[linearIssue?.priority || 0] || 'Medium',
+            linearUrl: ei.linearUrl,
+            createdAt: ei.createdAt,
+            customer: { id: ei.createdById, name: 'Customer' } // We'll get actual name if needed
+          };
+        });
+
+        // Count open issues (not completed or canceled)
+        openIssuesCount = externalIssues.filter(ei => {
+          const li = linearIssueMap.get(ei.linearIssueId);
+          return li && !['completed', 'canceled'].includes(li.state?.type || '');
+        }).length;
+      } catch (error) {
+        console.error('Error fetching Linear issues for dashboard:', error);
+        // Fallback to local data
+        recentIssues = externalIssues.slice(0, 5).map(ei => ({
+          id: ei.id,
+          title: ei.title,
+          status: ei.status === 'Done' ? 'RESOLVED' : ei.status === 'In Progress' ? 'IN_PROGRESS' : 'OPEN',
+          linearUrl: ei.linearUrl,
+          createdAt: ei.createdAt,
+          customer: { id: ei.createdById, name: 'Customer' }
+        }));
+        openIssuesCount = externalIssues.filter(ei => 
+          !['Done', 'Canceled', 'Completed'].includes(ei.status)
+        ).length;
+      }
+    }
 
     // Transform customers from UserCompanyRole to simpler format
     const formattedCustomers = recentCustomers.map(cr => ({
