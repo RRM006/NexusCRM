@@ -33,6 +33,10 @@ export const useWebRTC = () => {
   const durationIntervalRef = useRef(null);
   const pendingIceCandidatesRef = useRef([]);  // Queue ICE candidates until remote description is set
 
+  // Track if peer connection is ready to receive offer
+  const peerReadyRef = useRef(false);
+  const pendingOfferRef = useRef(null);
+
   // Start call duration timer
   const startDurationTimer = useCallback(() => {
     setCallDuration(0);
@@ -58,6 +62,13 @@ export const useWebRTC = () => {
       if (callIdRef.current !== callId) return;
 
       console.log('📨 Received WebRTC offer from:', from);
+
+      // If peer connection not ready yet, queue the offer
+      if (!peerReadyRef.current || !peerConnectionRef.current) {
+        console.log('⏳ Peer connection not ready, queuing offer...');
+        pendingOfferRef.current = { offer, from };
+        return;
+      }
 
       try {
         remoteSocketIdRef.current = from;
@@ -175,16 +186,29 @@ export const useWebRTC = () => {
 
     // Handle incoming remote stream
     pc.ontrack = (event) => {
-      console.log('🎵 Remote track received!');
+      console.log('🎵 ========== REMOTE TRACK RECEIVED ==========');
       console.log('Track kind:', event.track.kind);
+      console.log('Track id:', event.track.id);
       console.log('Track enabled:', event.track.enabled);
       console.log('Track readyState:', event.track.readyState);
+      console.log('Track muted:', event.track.muted);
 
       const [remoteStream] = event.streams;
+      console.log('Remote stream id:', remoteStream.id);
       console.log('Remote stream tracks:', remoteStream.getTracks().length);
+      
+      remoteStream.getTracks().forEach((track, i) => {
+        console.log(`  Remote track ${i}: ${track.kind}, enabled=${track.enabled}, muted=${track.muted}`);
+      });
+      console.log('🎵 =============================================');
 
       remoteStreamRef.current = remoteStream;
       remoteAudioRef.current = playRemoteAudio(remoteStream);
+      
+      // Add track event listeners for debugging
+      event.track.onmute = () => console.log('⚠️ Remote track muted');
+      event.track.onunmute = () => console.log('✅ Remote track unmuted');
+      event.track.onended = () => console.log('❌ Remote track ended');
     };
 
     return pc;
@@ -260,8 +284,36 @@ export const useWebRTC = () => {
       addLocalStreamToPeerConnection(pc, localStream);
       console.log('✅ Local tracks added');
 
-      console.log('⏳ Waiting for offer from caller...');
-      // Peer connection is now ready to receive offer
+      // Mark peer as ready to receive offer
+      peerReadyRef.current = true;
+
+      // Check if we already received an offer while setting up
+      if (pendingOfferRef.current) {
+        console.log('📨 Processing queued offer...');
+        const { offer, from } = pendingOfferRef.current;
+        pendingOfferRef.current = null;
+        remoteSocketIdRef.current = from;
+
+        try {
+          const answer = await createAnswer(pc, offer);
+          sendAnswer(callId, answer, from);
+          console.log('✅ Answer sent for queued offer');
+
+          // Apply any queued ICE candidates
+          if (pendingIceCandidatesRef.current.length > 0) {
+            console.log(`🧊 Applying ${pendingIceCandidatesRef.current.length} queued ICE candidates`);
+            for (const candidate of pendingIceCandidatesRef.current) {
+              await addIceCandidate(pc, candidate);
+            }
+            pendingIceCandidatesRef.current = [];
+          }
+        } catch (err) {
+          console.error('❌ Error processing queued offer:', err);
+          setError('Failed to establish connection');
+        }
+      } else {
+        console.log('⏳ Waiting for offer from caller...');
+      }
 
     } catch (err) {
       console.error('❌ Error answering call:', err);
@@ -318,6 +370,8 @@ export const useWebRTC = () => {
     callIdRef.current = null;
     remoteSocketIdRef.current = null;
     pendingIceCandidatesRef.current = [];  // Clear queued ICE candidates
+    peerReadyRef.current = false;  // Reset peer ready state
+    pendingOfferRef.current = null;  // Clear pending offer
     setConnectionState('new');
     setIsMuted(false);
     setIsConnecting(false);

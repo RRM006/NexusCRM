@@ -90,6 +90,24 @@ export const CallProvider = ({ children }) => {
     }
   }, [currentCompany, currentRole, isSocketConnected, user]);
 
+  // Sync WebRTC connection state with call status
+  useEffect(() => {
+    if (webRTC.connectionState === 'connected' && callStatus === CALL_STATUS.CONNECTING) {
+      console.log('✅ WebRTC connected, updating call status');
+      setCallStatus(CALL_STATUS.CONNECTED);
+    } else if (webRTC.connectionState === 'failed' && callStatus !== CALL_STATUS.IDLE) {
+      console.log('❌ WebRTC connection failed');
+      toast.error('Call connection failed. Please try again.');
+      resetCallState();
+      webRTC.cleanup();
+    } else if (webRTC.connectionState === 'disconnected' && callStatus === CALL_STATUS.CONNECTED) {
+      console.log('📴 WebRTC disconnected');
+      toast.error('Call disconnected');
+      resetCallState();
+      webRTC.cleanup();
+    }
+  }, [webRTC.connectionState, callStatus]);
+
   // Setup socket event listeners for calls
   const setupCallEventListeners = useCallback((socket) => {
     // Customer: Call is ringing

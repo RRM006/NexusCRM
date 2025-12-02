@@ -12,6 +12,7 @@ const ActiveCallUI = () => {
     callDuration,
     endActiveCall,
     toggleMute,
+    webRTCError,
   } = useCall();
 
   // Refs for audio elements - these will be used by WebRTC
@@ -28,7 +29,13 @@ const ActiveCallUI = () => {
         remote: !!remoteAudioRef.current
       });
     }
-  });
+    
+    // Cleanup on unmount
+    return () => {
+      window.__webrtc_local_audio = null;
+      window.__webrtc_remote_audio = null;
+    };
+  }, []); // Run once on mount
 
   const isActive =
     callStatus === CALL_STATUS.CONNECTING ||
@@ -36,6 +43,7 @@ const ActiveCallUI = () => {
 
   const isConnecting = callStatus === CALL_STATUS.CONNECTING || connectionState === 'connecting';
   const isConnected = connectionState === 'connected';
+  const hasError = !!webRTCError;
 
   return (
     <>
@@ -109,13 +117,21 @@ const ActiveCallUI = () => {
                       {callInfo?.adminName || callInfo?.callerName || callInfo?.recipientName || 'Support Call'}
                     </h4>
                     <div className="flex items-center gap-2">
-                      <span className={`text-sm ${isConnected ? 'text-emerald-400' : 'text-amber-400'}`}>
-                        {isConnecting ? 'Connecting...' : 'Connected'}
-                      </span>
-                      {isConnected && (
+                      {hasError ? (
+                        <span className="text-red-400 text-sm">
+                          {webRTCError}
+                        </span>
+                      ) : (
                         <>
-                          <span className="text-slate-500">•</span>
-                          <span className="text-slate-400 font-mono text-sm">{callDuration}</span>
+                          <span className={`text-sm ${isConnected ? 'text-emerald-400' : 'text-amber-400'}`}>
+                            {isConnecting ? 'Connecting...' : 'Connected'}
+                          </span>
+                          {isConnected && (
+                            <>
+                              <span className="text-slate-500">•</span>
+                              <span className="text-slate-400 font-mono text-sm">{callDuration}</span>
+                            </>
+                          )}
                         </>
                       )}
                     </div>

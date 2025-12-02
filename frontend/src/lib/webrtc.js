@@ -16,8 +16,8 @@ export const ICE_SERVERS = {
   iceCandidatePoolSize: 10,
 };
 
-// Audio constraints for voice-only calls
-export const AUDIO_CONSTRAINTS = {
+// Audio constraints for voice-only calls (strict)
+export const AUDIO_CONSTRAINTS_STRICT = {
   audio: {
     echoCancellation: true,
     noiseSuppression: true,
@@ -25,6 +25,12 @@ export const AUDIO_CONSTRAINTS = {
     sampleRate: 48000,
     channelCount: 1,
   },
+  video: false,
+};
+
+// Basic audio constraints (fallback)
+export const AUDIO_CONSTRAINTS_BASIC = {
+  audio: true,
   video: false,
 };
 
@@ -38,17 +44,79 @@ export const createPeerConnection = () => {
 };
 
 /**
- * Gets the user's audio stream
+ * Enumerate available audio input devices
+ * @returns {Promise<MediaDeviceInfo[]>}
+ */
+export const getAudioDevices = async () => {
+  try {
+    const devices = await navigator.mediaDevices.enumerateDevices();
+    return devices.filter(device => device.kind === 'audioinput');
+  } catch (error) {
+    console.error('Error enumerating devices:', error);
+    return [];
+  }
+};
+
+/**
+ * Gets the user's audio stream with progressive fallback
+ * First tries strict constraints, then basic, then specific device
  * @returns {Promise<MediaStream>}
  */
 export const getLocalAudioStream = async () => {
+  // First, check if getUserMedia is available
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+    console.error('❌ getUserMedia not supported in this browser');
+    throw new Error('Your browser does not support audio calls. Please use a modern browser.');
+  }
+
+  // Try 1: Strict constraints (best quality)
   try {
-    const stream = await navigator.mediaDevices.getUserMedia(AUDIO_CONSTRAINTS);
+    console.log('🎤 Trying strict audio constraints...');
+    const stream = await navigator.mediaDevices.getUserMedia(AUDIO_CONSTRAINTS_STRICT);
+    console.log('✅ Got audio stream with strict constraints');
     return stream;
   } catch (error) {
-    console.error('Error accessing microphone:', error);
-    throw new Error('Could not access microphone. Please check permissions.');
+    console.warn('⚠️ Strict constraints failed:', error.name, error.message);
   }
+
+  // Try 2: Basic constraints (just audio: true)
+  try {
+    console.log('🎤 Trying basic audio constraints...');
+    const stream = await navigator.mediaDevices.getUserMedia(AUDIO_CONSTRAINTS_BASIC);
+    console.log('✅ Got audio stream with basic constraints');
+    return stream;
+  } catch (error) {
+    console.warn('⚠️ Basic constraints failed:', error.name, error.message);
+  }
+
+  // Try 3: Find specific device and try with deviceId
+  try {
+    console.log('🎤 Enumerating audio devices...');
+    const audioDevices = await getAudioDevices();
+    console.log('📋 Available audio devices:', audioDevices.length);
+    
+    if (audioDevices.length > 0) {
+      for (const device of audioDevices) {
+        console.log(`🎤 Trying device: ${device.label || device.deviceId}`);
+        try {
+          const stream = await navigator.mediaDevices.getUserMedia({
+            audio: { deviceId: { exact: device.deviceId } },
+            video: false
+          });
+          console.log('✅ Got audio stream with specific device');
+          return stream;
+        } catch (e) {
+          console.warn(`⚠️ Device ${device.deviceId} failed:`, e.message);
+        }
+      }
+    }
+  } catch (error) {
+    console.warn('⚠️ Device enumeration failed:', error.message);
+  }
+
+  // All attempts failed
+  console.error('❌ All audio access attempts failed');
+  throw new Error('Could not access microphone. Please check that a microphone is connected and permissions are granted.');
 };
 
 /**
@@ -57,9 +125,18 @@ export const getLocalAudioStream = async () => {
  * @param {MediaStream} localStream 
  */
 export const addLocalStreamToPeerConnection = (peerConnection, localStream) => {
-  localStream.getTracks().forEach(track => {
-    peerConnection.addTrack(track, localStream);
+  const tracks = localStream.getTracks();
+  console.log(`📤 Adding ${tracks.length} local track(s) to peer connection`);
+  
+  tracks.forEach(track => {
+    console.log(`  ➕ Track: ${track.kind}, enabled: ${track.enabled}, readyState: ${track.readyState}`);
+    const sender = peerConnection.addTrack(track, localStream);
+    console.log(`  ✅ Sender created:`, sender);
   });
+  
+  // Log current senders
+  const senders = peerConnection.getSenders();
+  console.log(`📊 Total senders on peer connection: ${senders.length}`);
 };
 
 /**
@@ -83,9 +160,30 @@ export const createOffer = async (peerConnection) => {
  * @returns {Promise<RTCSessionDescriptionInit>}
  */
 export const createAnswer = async (peerConnection, offer) => {
+  console.log('📥 Setting remote description (offer)...');
   await peerConnection.setRemoteDescription(new RTCSessionDescription(offer));
+  console.log('✅ Remote description set');
+  
+  // Check senders before creating answer
+  const senders = peerConnection.getSenders();
+  console.log(`📊 Senders before answer: ${senders.length}`);
+  senders.forEach((sender, i) => {
+    console.log(`  Sender ${i}: track=${sender.track?.kind || 'none'}, enabled=${sender.track?.enabled}`);
+  });
+  
+  console.log('📝 Creating answer...');
   const answer = await peerConnection.createAnswer();
+  console.log('✅ Answer created');
+  
+  // Log SDP to check if audio is included
+  if (answer.sdp) {
+    const hasAudio = answer.sdp.includes('m=audio');
+    console.log(`🎵 Answer SDP has audio: ${hasAudio}`);
+  }
+  
   await peerConnection.setLocalDescription(answer);
+  console.log('✅ Local description set');
+  
   return answer;
 };
 
@@ -141,31 +239,56 @@ export const closePeerConnection = (peerConnection) => {
  * @returns {HTMLAudioElement|null}
  */
 export const playRemoteAudio = (remoteStream) => {
-  // WebRTC Debug Checklist:
-  // ✅ Mic allowed? (check 🔒 in address bar)
-  // ✅ getUserMedia() called on BOTH sides?
-  // ✅ addTrack() used (not addStream)?
-  // ✅ remote stream attached to <audio autoPlay>?
-  // ✅ STUN server configured?
-  // ✅ Testing on TWO REAL DEVICES (not localhost ↔ localhost)?
-
-  console.log('🔊 Setting up remote audio playback...');
+  console.log('🔊 ========== SETTING UP REMOTE AUDIO ==========');
+  console.log('Remote stream:', remoteStream);
+  console.log('Remote stream active:', remoteStream.active);
+  console.log('Remote stream tracks:', remoteStream.getTracks().length);
+  
+  remoteStream.getTracks().forEach((track, i) => {
+    console.log(`  Track ${i}: kind=${track.kind}, enabled=${track.enabled}, muted=${track.muted}, readyState=${track.readyState}`);
+  });
 
   // Try to use DOM audio element first (preferred for autoplay)
   const remoteAudio = window.__webrtc_remote_audio || document.getElementById('remote-audio');
 
   if (remoteAudio) {
     console.log('✅ Using DOM audio element for remote stream');
+    console.log('  Audio element muted:', remoteAudio.muted);
+    console.log('  Audio element volume:', remoteAudio.volume);
+    
     remoteAudio.srcObject = remoteStream;
+    
+    // Make sure it's not muted and volume is up
+    remoteAudio.muted = false;
+    remoteAudio.volume = 1.0;
 
     // Ensure autoplay
-    remoteAudio.play()
-      .then(() => console.log('✅ Remote audio playing successfully'))
-      .catch(e => {
-        console.warn('⚠️ Autoplay blocked. User interaction may be required:', e);
-        console.warn('💡 TIP: Click anywhere on the page to enable audio');
-      });
+    const playPromise = remoteAudio.play();
+    if (playPromise !== undefined) {
+      playPromise
+        .then(() => {
+          console.log('✅ Remote audio playing successfully!');
+          console.log('  Current time:', remoteAudio.currentTime);
+          console.log('  Paused:', remoteAudio.paused);
+        })
+        .catch(e => {
+          console.warn('⚠️ Autoplay blocked. Error:', e.name, e.message);
+          console.warn('💡 TIP: Click anywhere on the page to enable audio');
+          
+          // Try to play on user interaction
+          const playOnClick = () => {
+            remoteAudio.play()
+              .then(() => {
+                console.log('✅ Audio started after user interaction');
+                document.removeEventListener('click', playOnClick);
+              })
+              .catch(err => console.error('Still cannot play:', err));
+          };
+          document.addEventListener('click', playOnClick, { once: true });
+        });
+    }
 
+    console.log('🔊 =============================================');
     return remoteAudio;
   } else {
     // Fallback to creating audio element
@@ -174,10 +297,17 @@ export const playRemoteAudio = (remoteStream) => {
     audio.srcObject = remoteStream;
     audio.autoplay = true;
     audio.playsInline = true;
+    audio.muted = false;
+    audio.volume = 1.0;
+    
     audio.play().catch(e => {
       console.error('❌ Audio play error:', e);
-      console.error('💡 SOLUTION: Ensure microphone permissions are granted on BOTH devices');
     });
+    
+    // Append to body so it persists
+    document.body.appendChild(audio);
+    
+    console.log('🔊 =============================================');
     return audio;
   }
 };
