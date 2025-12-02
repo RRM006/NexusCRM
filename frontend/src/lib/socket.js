@@ -159,6 +159,27 @@ export const getOnlineAdmins = (companyId) => {
   }
 };
 
+/**
+ * Admin/Staff initiates call to a customer
+ * @param {string} customerId 
+ * @param {string} companyId 
+ */
+export const callCustomer = (customerId, companyId) => {
+  if (socket?.connected) {
+    socket.emit('call-customer', { customerId, companyId });
+  }
+};
+
+/**
+ * Customer accepts incoming call from admin
+ * @param {string} callId 
+ */
+export const customerAcceptCall = (callId) => {
+  if (socket?.connected) {
+    socket.emit('customer-accept-call', { callId });
+  }
+};
+
 export default {
   initializeSocket,
   getSocket,
@@ -173,5 +194,7 @@ export default {
   sendAnswer,
   sendIceCandidate,
   getOnlineAdmins,
+  callCustomer,
+  customerAcceptCall,
 };
 

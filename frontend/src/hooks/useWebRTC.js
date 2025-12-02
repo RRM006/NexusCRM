@@ -31,6 +31,7 @@ export const useWebRTC = () => {
   const callIdRef = useRef(null);
   const remoteSocketIdRef = useRef(null);
   const durationIntervalRef = useRef(null);
+  const pendingIceCandidatesRef = useRef([]);  // Queue ICE candidates until remote description is set
 
   // Start call duration timer
   const startDurationTimer = useCallback(() => {
@@ -62,6 +63,15 @@ export const useWebRTC = () => {
         if (pc) {
           const answer = await createAnswer(pc, offer);
           sendAnswer(callId, answer, from);
+          
+          // Apply any queued ICE candidates now that remote description is set
+          if (pendingIceCandidatesRef.current.length > 0) {
+            console.log(`Applying ${pendingIceCandidatesRef.current.length} queued ICE candidates`);
+            for (const candidate of pendingIceCandidatesRef.current) {
+              await addIceCandidate(pc, candidate);
+            }
+            pendingIceCandidatesRef.current = [];
+          }
         }
       } catch (err) {
         console.error('Error handling offer:', err);
@@ -76,6 +86,15 @@ export const useWebRTC = () => {
         const pc = peerConnectionRef.current;
         if (pc) {
           await setRemoteAnswer(pc, answer);
+          
+          // Apply any queued ICE candidates now that remote description is set
+          if (pendingIceCandidatesRef.current.length > 0) {
+            console.log(`Applying ${pendingIceCandidatesRef.current.length} queued ICE candidates`);
+            for (const candidate of pendingIceCandidatesRef.current) {
+              await addIceCandidate(pc, candidate);
+            }
+            pendingIceCandidatesRef.current = [];
+          }
         }
       } catch (err) {
         console.error('Error handling answer:', err);
@@ -89,6 +108,12 @@ export const useWebRTC = () => {
       try {
         const pc = peerConnectionRef.current;
         if (pc) {
+          // Queue ICE candidates if remote description not yet set
+          if (!pc.remoteDescription) {
+            console.log('Queuing ICE candidate (remote description not set yet)');
+            pendingIceCandidatesRef.current.push(candidate);
+            return;
+          }
           await addIceCandidate(pc, candidate);
         }
       } catch (err) {
@@ -241,6 +266,7 @@ export const useWebRTC = () => {
 
     callIdRef.current = null;
     remoteSocketIdRef.current = null;
+    pendingIceCandidatesRef.current = [];  // Clear queued ICE candidates
     setConnectionState('new');
     setIsMuted(false);
     setIsConnecting(false);

@@ -47,7 +47,9 @@ const IncomingCallModal = () => {
                 <h3 className="text-2xl font-bold text-white mb-1">
                   {incomingCall?.callerName || 'Unknown Caller'}
                 </h3>
-                <p className="text-slate-400 text-sm mb-2">Customer Support Call</p>
+                <p className="text-slate-400 text-sm mb-2">
+                  {incomingCall?.isFromAdmin ? 'Support is calling you' : 'Customer Support Call'}
+                </p>
                 
                 <motion.p
                   animate={{ opacity: [0.5, 1, 0.5] }}

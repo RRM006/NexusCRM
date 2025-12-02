@@ -11,6 +11,8 @@ import {
   rejectCall as socketRejectCall,
   cancelCall as socketCancelCall,
   endCall as socketEndCall,
+  callCustomer as socketCallCustomer,
+  customerAcceptCall as socketCustomerAcceptCall,
 } from '../lib/socket';
 import { useWebRTC } from '../hooks/useWebRTC';
 import toast from 'react-hot-toast';
@@ -97,11 +99,32 @@ export const CallProvider = ({ children }) => {
       setCallStatus(CALL_STATUS.RINGING);
     });
 
-    // Customer: Call was accepted by admin
-    socket.on('call-accepted', ({ callId, adminId, adminName }) => {
+    // INITIATOR receives call-accepted - they should CREATE the offer
+    socket.on('call-accepted', ({ callId, adminId, adminName, adminSocketId, recipientId, recipientName, recipientSocketId }) => {
       setCallStatus(CALL_STATUS.CONNECTING);
-      setCallInfo({ adminId, adminName });
-      toast.success(`${adminName} accepted your call`);
+      
+      // Check if this is admin-initiated call (admin calling customer)
+      if (recipientSocketId) {
+        // Admin initiated the call, customer accepted
+        // Admin is INITIATOR → creates offer
+        setCallInfo({ recipientId, recipientName, recipientSocketId });
+        callIdRef.current = callId;
+        remoteSocketIdRef.current = recipientSocketId;
+        toast.success(`${recipientName} accepted your call`);
+        
+        // INITIATOR creates offer
+        webRTC.startCall(callId, recipientSocketId);
+      } else {
+        // Customer initiated the call, admin accepted
+        // Customer is INITIATOR → creates offer
+        setCallInfo({ adminId, adminName, adminSocketId });
+        callIdRef.current = callId;
+        remoteSocketIdRef.current = adminSocketId;
+        toast.success(`${adminName} accepted your call`);
+        
+        // INITIATOR creates offer (customer initiated, so customer creates offer)
+        webRTC.startCall(callId, adminSocketId);
+      }
     });
 
     // Customer: No one answered
@@ -117,13 +140,14 @@ export const CallProvider = ({ children }) => {
       }
     });
 
-    // Admin: Incoming call
-    socket.on('incoming-call', ({ callId, callerId, callerName, companyId }) => {
+    // Incoming call (for Admin receiving customer calls OR Customer receiving admin calls)
+    socket.on('incoming-call', ({ callId, callerId, callerName, companyId, isFromAdmin }) => {
       setIncomingCall({
         callId,
         callerId,
         callerName,
         companyId,
+        isFromAdmin: isFromAdmin || false,  // Track if call is from admin to customer
       });
       setCallStatus(CALL_STATUS.INCOMING);
       // Play ringtone sound
@@ -150,7 +174,8 @@ export const CallProvider = ({ children }) => {
       }
     });
 
-    // Admin: Call connected (ready to start WebRTC)
+    // Acceptor receives call-connected (ready for WebRTC)
+    // The ACCEPTOR waits to receive an offer from the INITIATOR
     socket.on('call-connected', ({ callId, callerId, callerName, callerSocketId }) => {
       setCurrentCallId(callId);
       callIdRef.current = callId;
@@ -160,8 +185,8 @@ export const CallProvider = ({ children }) => {
       setIncomingCall(null);
       stopRingtone();
       
-      // Admin initiates WebRTC connection
-      webRTC.startCall(callId, callerSocketId);
+      // Acceptor prepares peer connection to RECEIVE an offer (not create one)
+      webRTC.answerCall(callId, callerSocketId);
     });
 
     // Online admins list
@@ -170,10 +195,10 @@ export const CallProvider = ({ children }) => {
     });
 
     socket.on('user-online', ({ userId, userName, role }) => {
-      if (role === 'ADMIN') {
+      if (role === 'ADMIN' || role === 'STAFF') {
         setOnlineAdmins(prev => {
           if (!prev.find(a => a.userId === userId)) {
-            return [...prev, { userId, userName }];
+            return [...prev, { userId, userName, role }];
           }
           return prev;
         });
@@ -182,6 +207,12 @@ export const CallProvider = ({ children }) => {
 
     socket.on('user-offline', ({ userId }) => {
       setOnlineAdmins(prev => prev.filter(a => a.userId !== userId));
+    });
+
+    // Handle call errors
+    socket.on('call-error', ({ message }) => {
+      toast.error(message);
+      resetCallState();
     });
   }, [currentCallId, incomingCall, webRTC]);
 
@@ -259,6 +290,28 @@ export const CallProvider = ({ children }) => {
     toast('Calling support...', { icon: '📞' });
   }, [currentCompany, callStatus]);
 
+  // Admin/Staff: Initiate call to a specific customer
+  const callCustomer = useCallback((customerId, customerName) => {
+    if (!currentCompany) {
+      toast.error('Please select a company first');
+      return;
+    }
+    
+    if (callStatus !== CALL_STATUS.IDLE) {
+      toast.error('You already have an active call');
+      return;
+    }
+
+    if (!isSocketConnected) {
+      toast.error('Not connected to server');
+      return;
+    }
+
+    setCallStatus(CALL_STATUS.REQUESTING);
+    socketCallCustomer(customerId, currentCompany.id);
+    toast(`Calling ${customerName || 'customer'}...`, { icon: '📞' });
+  }, [currentCompany, callStatus, isSocketConnected]);
+
   // Customer: Cancel outgoing call
   const cancelOutgoingCall = useCallback(() => {
     if (currentCallId) {
@@ -268,12 +321,19 @@ export const CallProvider = ({ children }) => {
     webRTC.cleanup();
   }, [currentCallId, resetCallState, webRTC]);
 
-  // Admin: Accept incoming call
+  // Accept incoming call (works for both admin and customer)
   const acceptIncomingCall = useCallback(async () => {
     if (!incomingCall) return;
     
     stopRingtone();
-    socketAcceptCall(incomingCall.callId);
+    
+    if (incomingCall.isFromAdmin) {
+      // Customer accepting call from admin
+      socketCustomerAcceptCall(incomingCall.callId);
+    } else {
+      // Admin accepting call from customer
+      socketAcceptCall(incomingCall.callId);
+    }
     // WebRTC connection will be initiated after receiving 'call-connected' event
   }, [incomingCall]);
 
@@ -322,6 +382,7 @@ export const CallProvider = ({ children }) => {
     
     // Actions
     callSupport,
+    callCustomer,
     cancelOutgoingCall,
     acceptIncomingCall,
     rejectIncomingCall,
@@ -354,6 +415,7 @@ export const useCall = () => {
       callDuration: '00:00',
       webRTCError: null,
       callSupport: () => {},
+      callCustomer: () => {},
       cancelOutgoingCall: () => {},
       acceptIncomingCall: () => {},
       rejectIncomingCall: () => {},

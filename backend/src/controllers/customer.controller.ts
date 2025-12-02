@@ -58,8 +58,9 @@ export const getCustomers = async (req: AuthenticatedRequest, res: Response): Pr
 
     // Transform data to customer format
     const customers = customerRoles.map(cr => ({
-      id: cr.id, // UserCompanyRole ID
-      oderId: cr.userId, // User ID
+      id: cr.userId, // User ID (needed for calling)
+      userCompanyRoleId: cr.id, // UserCompanyRole ID (for deletion)
+      userId: cr.userId, // User ID
       name: cr.user.name,
       email: cr.user.email,
       phone: cr.user.phone,

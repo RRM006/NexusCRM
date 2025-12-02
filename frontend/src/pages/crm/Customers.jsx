@@ -13,6 +13,7 @@ import {
   Calendar,
   AlertCircle
 } from 'lucide-react'
+import { CallCustomerButton } from '../../components/calling'
 
 const Customers = () => {
   const navigate = useNavigate()
@@ -152,6 +153,10 @@ const Customers = () => {
                       </td>
                       <td>
                         <div className="flex items-center gap-1">
+                          <CallCustomerButton 
+                            customerId={customer.id}
+                            customerName={customer.name}
+                          />
                           <button
                             onClick={() => navigate(`/customers/${customer.id}`)}
                             className="p-2 hover:bg-dark-100 dark:hover:bg-dark-800 rounded-lg"
@@ -160,7 +165,7 @@ const Customers = () => {
                             <Eye className="w-4 h-4 text-dark-400" />
                           </button>
                           <button
-                            onClick={() => handleRemoveCustomer(customer.id)}
+                            onClick={() => handleRemoveCustomer(customer.userCompanyRoleId)}
                             className="p-2 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg"
                             title="Remove from company"
                           >
