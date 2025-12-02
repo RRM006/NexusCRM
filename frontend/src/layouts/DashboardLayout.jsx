@@ -6,6 +6,7 @@ import { useCompany } from '../context/CompanyContext'
 import { useTheme } from '../context/ThemeContext'
 import NotificationBell from '../components/NotificationBell'
 import { AIChatbot } from '../components/ai'
+import { FloatingChatButton } from '../components/chat'
 import {
   LayoutDashboard,
   Users,
@@ -349,6 +350,9 @@ const DashboardLayout = () => {
 
       {/* AI Chatbot */}
       <AIChatbot isOpen={aiChatOpen} onClose={() => setAiChatOpen(false)} />
+
+      {/* Floating Chat Button - shows all conversations */}
+      <FloatingChatButton />
     </div>
   )
 }

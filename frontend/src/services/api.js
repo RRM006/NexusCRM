@@ -298,6 +298,65 @@ export const superAdminAPI = {
   }
 }
 
+// 1:1 Chat API for authenticated company users (ADMIN / STAFF / CUSTOMER)
+export const chatAPI = {
+  start: (withUserId) => api.post('/chat/start', { withUserId }),
+  send: (conversationId, content) => api.post('/chat/send', { conversationId, content }),
+  listConversations: () => api.get('/chat/conversations'),
+  getConversation: (conversationId) => api.get(`/chat/${conversationId}`)
+}
+
+// Super Admin chat API (uses superAdminToken and bypasses company headers)
+export const superAdminChatAPI = {
+  startWithCompany: (companyId) => {
+    const token = localStorage.getItem('superAdminToken')
+    if (!token) {
+      console.error('superAdminChatAPI: No superAdminToken found in localStorage')
+      return Promise.reject(new Error('Super Admin not authenticated'))
+    }
+    return axios.post(`${API_URL}/chat/super-admin/start-company`, { companyId }, {
+      headers: { Authorization: `Bearer ${token}` }
+    })
+  },
+  startWithCustomer: (customerUserId, companyId) => {
+    const token = localStorage.getItem('superAdminToken')
+    if (!token) {
+      console.error('superAdminChatAPI: No superAdminToken found in localStorage')
+      return Promise.reject(new Error('Super Admin not authenticated'))
+    }
+    return axios.post(`${API_URL}/chat/super-admin/start-customer`, { customerUserId, companyId }, {
+      headers: { Authorization: `Bearer ${token}` }
+    })
+  },
+  send: (conversationId, content) => {
+    const token = localStorage.getItem('superAdminToken')
+    if (!token) {
+      return Promise.reject(new Error('Super Admin not authenticated'))
+    }
+    return axios.post(`${API_URL}/chat/super-admin/send`, { conversationId, content }, {
+      headers: { Authorization: `Bearer ${token}` }
+    })
+  },
+  listConversations: () => {
+    const token = localStorage.getItem('superAdminToken')
+    if (!token) {
+      return Promise.reject(new Error('Super Admin not authenticated'))
+    }
+    return axios.get(`${API_URL}/chat/super-admin/conversations`, {
+      headers: { Authorization: `Bearer ${token}` }
+    })
+  },
+  getConversation: (conversationId) => {
+    const token = localStorage.getItem('superAdminToken')
+    if (!token) {
+      return Promise.reject(new Error('Super Admin not authenticated'))
+    }
+    return axios.get(`${API_URL}/chat/super-admin/${conversationId}`, {
+      headers: { Authorization: `Bearer ${token}` }
+    })
+  }
+}
+
 // Email API
 export const emailAPI = {
   // Gmail OAuth

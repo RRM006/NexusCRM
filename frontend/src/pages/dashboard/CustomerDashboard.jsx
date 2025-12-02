@@ -5,6 +5,7 @@ import { useAuth } from '../../context/AuthContext'
 import { useCompany } from '../../context/CompanyContext'
 import { dashboardAPI } from '../../services/api'
 import { CallSupportButton } from '../../components/calling'
+import { ChatButton, ChatBox } from '../../components/chat'
 import {
   Building2,
   Globe,
@@ -16,7 +17,8 @@ import {
   Clock,
   AlertCircle,
   Plus,
-  Headphones
+  Headphones,
+  MessageCircle
 } from 'lucide-react'
 
 const CustomerDashboard = () => {
@@ -24,6 +26,7 @@ const CustomerDashboard = () => {
   const { currentCompany } = useCompany()
   const [dashboardData, setDashboardData] = useState(null)
   const [isLoading, setIsLoading] = useState(true)
+  const [isChatOpen, setIsChatOpen] = useState(false)
 
   useEffect(() => {
     const fetchDashboard = async () => {
@@ -61,6 +64,9 @@ const CustomerDashboard = () => {
   }
 
   const company = dashboardData?.company
+  const supportStaff = dashboardData?.supportStaff || []
+  // Get first admin/staff to message, fallback to company owner
+  const primaryContact = supportStaff[0] || (company?.ownerId ? { id: company.ownerId, name: company.ownerName || company.name } : null)
 
   return (
     <div className="space-y-8">
@@ -84,16 +90,37 @@ const CustomerDashboard = () => {
           </motion.p>
         </div>
 
-        {/* Call Support Section */}
+        {/* Call / Chat Support Section */}
         <motion.div
           initial={{ opacity: 0, x: 20 }}
           animate={{ opacity: 1, x: 0 }}
           transition={{ delay: 0.2 }}
           className="flex-shrink-0"
         >
-          <CallSupportButton />
+          <div className="flex items-center gap-3">
+            {primaryContact && (
+              <button
+                onClick={() => setIsChatOpen(true)}
+                className="flex items-center gap-2 px-5 py-3 rounded-xl font-semibold text-white bg-gradient-to-r from-primary-500 to-primary-600 hover:from-primary-600 hover:to-primary-700 shadow-lg hover:shadow-primary-500/40 transition-all duration-300"
+              >
+                <MessageCircle className="w-5 h-5" />
+                <span>Chat Support</span>
+              </button>
+            )}
+            <CallSupportButton />
+          </div>
         </motion.div>
       </div>
+
+      {/* Chat Box Modal */}
+      {primaryContact && (
+        <ChatBox
+          isOpen={isChatOpen}
+          onClose={() => setIsChatOpen(false)}
+          targetUserId={primaryContact.id}
+          targetUserName={primaryContact.name}
+        />
+      )}
 
       {/* Call Support Card */}
       <motion.div
@@ -190,6 +217,50 @@ const CustomerDashboard = () => {
           </div>
         </div>
       </motion.div>
+
+      {/* Support Team - Message any admin/staff */}
+      {supportStaff.length > 0 && (
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.28 }}
+          className="card p-6"
+        >
+          <h2 className="text-lg font-semibold mb-4">💬 Contact Support Team</h2>
+          <p className="text-sm text-dark-500 mb-4">Click on any team member to start a chat</p>
+          <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
+            {supportStaff.map((staff) => (
+              <div
+                key={staff.id}
+                className="flex items-center gap-3 p-3 rounded-xl bg-dark-50 dark:bg-dark-800 hover:bg-dark-100 dark:hover:bg-dark-700 transition-colors"
+              >
+                <div className="avatar avatar-md">
+                  {staff.avatar ? (
+                    <img src={staff.avatar} alt={staff.name} className="rounded-full" />
+                  ) : (
+                    staff.name?.charAt(0) || 'S'
+                  )}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="font-medium truncate">{staff.name}</p>
+                  <span className={`text-xs px-2 py-0.5 rounded-full ${
+                    staff.role === 'ADMIN' 
+                      ? 'bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400'
+                      : 'bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400'
+                  }`}>
+                    {staff.role}
+                  </span>
+                </div>
+                <ChatButton
+                  targetUserId={staff.id}
+                  targetUserName={staff.name}
+                  label={`Message ${staff.name}`}
+                />
+              </div>
+            ))}
+          </div>
+        </motion.div>
+      )}
 
       {/* Main Content Grid */}
       <div className="grid lg:grid-cols-2 gap-6">

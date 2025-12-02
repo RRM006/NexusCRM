@@ -14,6 +14,7 @@ import {
   AlertCircle
 } from 'lucide-react'
 import { CallCustomerButton } from '../../components/calling'
+import { ChatButton } from '../../components/chat/ChatButton'
 
 const Customers = () => {
   const navigate = useNavigate()
@@ -118,6 +119,11 @@ const Customers = () => {
                     <tr key={customer.id}>
                       <td>
                         <div className="flex items-center gap-3">
+                          <ChatButton
+                            targetUserId={customer.userId}
+                            targetUserName={customer.name}
+                            label="Message customer"
+                          />
                           <div className="avatar avatar-sm">
                             {customer.name?.charAt(0) || 'C'}
                           </div>

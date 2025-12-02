@@ -31,7 +31,8 @@ import {
   Loader2
 } from 'lucide-react'
 import toast from 'react-hot-toast'
-import { superAdminAPI } from '../../services/api'
+import { superAdminAPI, superAdminChatAPI } from '../../services/api'
+import { ChatButton, FloatingChatButton } from '../../components/chat'
 
 // Stat Card Component
 const StatCard = ({ title, value, icon: Icon, trend, trendValue, color, delay }) => {
@@ -127,7 +128,13 @@ const CompanyRow = ({ company, onToggleStatus, onViewDetails }) => {
         </p>
       </td>
       <td className="py-4 px-4">
-        <div className="relative">
+        <div className="relative flex items-center gap-1">
+          <ChatButton
+            targetCompanyId={company.id}
+            targetCompanyName={company.name}
+            isSuperAdmin
+            label="Message company"
+          />
           <button
             onClick={() => setShowMenu(!showMenu)}
             className="p-2 hover:bg-slate-700/50 rounded-lg transition-colors"
@@ -759,6 +766,9 @@ const SuperAdminDashboard = () => {
           </motion.div>
         )}
       </main>
+
+      {/* Floating Chat Button for Super Admin */}
+      <FloatingChatButton isSuperAdmin />
     </div>
   )
 }

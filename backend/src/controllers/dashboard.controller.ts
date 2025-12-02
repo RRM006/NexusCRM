@@ -222,7 +222,35 @@ export const getCustomerDashboard = async (req: AuthenticatedRequest, res: Respo
         logo: true,
         website: true,
         email: true,
-        phone: true
+        phone: true,
+        ownerId: true,
+        owner: {
+          select: {
+            id: true,
+            name: true,
+            email: true
+          }
+        }
+      }
+    });
+
+    // Get admins/staff that customer can message
+    const supportStaff = await prisma.userCompanyRole.findMany({
+      where: {
+        companyId: req.companyId,
+        role: { in: [Role.ADMIN, Role.STAFF] },
+        isActive: true
+      },
+      take: 5,
+      include: {
+        user: {
+          select: {
+            id: true,
+            name: true,
+            email: true,
+            avatar: true
+          }
+        }
       }
     });
 
@@ -249,10 +277,23 @@ export const getCustomerDashboard = async (req: AuthenticatedRequest, res: Respo
       }
     });
 
+    // Format company with owner name
+    const formattedCompany = company ? {
+      ...company,
+      ownerName: company.owner?.name || company.name
+    } : null;
+
     res.json({
       success: true,
       data: {
-        company,
+        company: formattedCompany,
+        supportStaff: supportStaff.map(s => ({
+          id: s.user.id,
+          name: s.user.name,
+          email: s.user.email,
+          avatar: s.user.avatar,
+          role: s.role
+        })),
         myTasks,
         recentActivities
       }

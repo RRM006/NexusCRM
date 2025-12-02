@@ -24,6 +24,7 @@ import pipelineRoutes from './routes/pipeline.routes';
 import dealRoutes from './routes/deal.routes';
 import superAdminRoutes from './routes/superAdmin.routes';
 import callRoutes from './routes/call.routes';
+import chatRoutes from './routes/chat.routes';
 
 // Middleware
 import { errorHandler } from './middleware/error.middleware';
@@ -101,6 +102,7 @@ app.use('/api/pipeline', pipelineRoutes);
 app.use('/api/deals', dealRoutes);
 app.use('/api/super-admin', superAdminRoutes);
 app.use('/api/calls', callRoutes);
+app.use('/api/chat', chatRoutes);
 
 // Error Handler
 app.use(errorHandler);
