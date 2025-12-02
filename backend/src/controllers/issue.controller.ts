@@ -49,8 +49,8 @@ function transformLinearIssue(linearIssue: any, externalIssue?: any) {
 }
 
 /**
- * GET /issues - Get all issues from Linear
- * Fetches from Linear API and returns in frontend-compatible format
+ * GET /issues - Get all issues
+ * Fetches from Linear API if configured, otherwise from local database
  */
 export const getIssues = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   try {
@@ -59,85 +59,149 @@ export const getIssues = async (req: AuthenticatedRequest, res: Response): Promi
       return;
     }
 
-    // Check if Linear is configured
-    if (!linearService.isConfigured()) {
-      res.status(503).json({
-        success: false,
-        message: 'Linear integration is not configured. Please set LINEAR_API_TOKEN and LINEAR_TEAM_ID.',
-      });
-      return;
-    }
-
     const page = parseInt(req.query.page as string) || 1;
     const limit = parseInt(req.query.limit as string) || 10;
     const status = req.query.status as string;
     const bypassCache = req.query.refresh === 'true';
 
-    // Build filter based on status (only if status is a valid non-empty string)
-    let filter: any = undefined;
-    if (status && status.trim() !== '') {
-      const statusTypeMap: Record<string, string[]> = {
-        OPEN: ['triage', 'backlog', 'unstarted'],
-        IN_PROGRESS: ['started'],
-        RESOLVED: ['completed'],
-        CLOSED: ['canceled'],
-      };
-      if (statusTypeMap[status]) {
-        filter = { state: { type: { in: statusTypeMap[status] } } };
+    // Check if Linear is configured
+    if (linearService.isConfigured()) {
+      // === LINEAR MODE ===
+      // Build filter based on status (only if status is a valid non-empty string)
+      let filter: any = undefined;
+      if (status && status.trim() !== '') {
+        const statusTypeMap: Record<string, string[]> = {
+          OPEN: ['triage', 'backlog', 'unstarted'],
+          IN_PROGRESS: ['started'],
+          RESOLVED: ['completed'],
+          CLOSED: ['canceled'],
+        };
+        if (statusTypeMap[status]) {
+          filter = { state: { type: { in: statusTypeMap[status] } } };
+        }
       }
-    }
 
-    console.log('[Issues] Fetching from Linear for company:', req.companyId);
+      console.log('[Issues] Fetching from Linear for company:', req.companyId);
 
-    // Fetch issues from Linear
-    const { issues: linearIssues } = await linearService.getIssues({
-      first: 100, // Fetch more to allow filtering
-      filter,
-      bypassCache,
-    });
-    
-    console.log('[Issues] Fetched', linearIssues.length, 'issues from Linear');
-
-    // Get local ExternalIssue records for this tenant
-    const externalIssues = await prisma.externalIssue.findMany({
-      where: { tenantId: req.companyId },
-    });
-
-    const externalIssueMap = new Map(
-      externalIssues.map((ei) => [ei.linearIssueId, ei])
-    );
-
-    // Transform and filter issues
-    let transformedIssues = linearIssues.map((li) =>
-      transformLinearIssue(li, externalIssueMap.get(li.id))
-    );
-
-    // For CUSTOMER role, only show issues they created (tracked in ExternalIssue)
-    if (req.userRole === Role.CUSTOMER) {
-      const userExternalIssueIds = externalIssues
-        .filter((ei) => ei.createdById === req.user!.id)
-        .map((ei) => ei.linearIssueId);
+      // Fetch issues from Linear
+      const { issues: linearIssues } = await linearService.getIssues({
+        first: 100, // Fetch more to allow filtering
+        filter,
+        bypassCache,
+      });
       
-      transformedIssues = transformedIssues.filter((issue) =>
-        userExternalIssueIds.includes(issue.linearIssueId)
+      console.log('[Issues] Fetched', linearIssues.length, 'issues from Linear');
+
+      // Get local ExternalIssue records for this tenant
+      const externalIssues = await prisma.externalIssue.findMany({
+        where: { tenantId: req.companyId },
+      });
+
+      const externalIssueMap = new Map(
+        externalIssues.map((ei) => [ei.linearIssueId, ei])
       );
+
+      // Transform and filter issues
+      let transformedIssues = linearIssues.map((li) =>
+        transformLinearIssue(li, externalIssueMap.get(li.id))
+      );
+
+      // For CUSTOMER role, only show issues they created (tracked in ExternalIssue)
+      if (req.userRole === Role.CUSTOMER) {
+        const userExternalIssueIds = externalIssues
+          .filter((ei) => ei.createdById === req.user!.id)
+          .map((ei) => ei.linearIssueId);
+        
+        transformedIssues = transformedIssues.filter((issue) =>
+          userExternalIssueIds.includes(issue.linearIssueId)
+        );
+      }
+
+      // Apply pagination
+      const total = transformedIssues.length;
+      const startIndex = (page - 1) * limit;
+      const paginatedIssues = transformedIssues.slice(startIndex, startIndex + limit);
+
+      res.json({
+        success: true,
+        data: {
+          issues: paginatedIssues,
+          pagination: {
+            page,
+            limit,
+            total,
+            totalPages: Math.ceil(total / limit),
+          },
+          source: 'linear'
+        },
+      });
+      return;
     }
 
-    // Apply pagination
-    const total = transformedIssues.length;
-    const startIndex = (page - 1) * limit;
-    const paginatedIssues = transformedIssues.slice(startIndex, startIndex + limit);
+    // === LOCAL/LEGACY MODE (no Linear) ===
+    console.log('[Issues] Linear not configured, using local database');
+    
+    const where: any = { companyId: req.companyId };
+    
+    // Filter by status if provided
+    if (status && status.trim() !== '') {
+      where.status = status;
+    }
+    
+    // For CUSTOMER role, only show their own issues
+    if (req.userRole === Role.CUSTOMER) {
+      where.customerId = req.user.id;
+    }
+
+    const [issues, total] = await Promise.all([
+      prisma.issue.findMany({
+        where,
+        skip: (page - 1) * limit,
+        take: limit,
+        orderBy: { createdAt: 'desc' },
+        include: {
+          customer: {
+            select: { name: true, email: true }
+          },
+          resolvedBy: {
+            select: { name: true }
+          }
+        }
+      }),
+      prisma.issue.count({ where })
+    ]);
+
+    // Transform to frontend-compatible format
+    const transformedIssues = issues.map(issue => ({
+      id: issue.id,
+      title: issue.title,
+      description: issue.description,
+      status: issue.status,
+      priority: issue.priority,
+      category: issue.category,
+      createdAt: issue.createdAt,
+      updatedAt: issue.updatedAt,
+      resolvedAt: issue.resolvedAt,
+      resolution: issue.resolution,
+      customer: issue.customer,
+      resolvedBy: issue.resolvedBy,
+      // For legacy issues, use empty string for Linear fields
+      linearIssueId: null,
+      linearUrl: null,
+      identifier: `ISSUE-${issue.id.slice(0, 8).toUpperCase()}`,
+    }));
 
     res.json({
       success: true,
       data: {
-        issues: paginatedIssues,
+        issues: transformedIssues,
         pagination: {
           page,
           limit,
           total,
           totalPages: Math.ceil(total / limit),
         },
+        source: 'local'
       },
     });
   } catch (error) {
@@ -156,13 +220,14 @@ export const getIssues = async (req: AuthenticatedRequest, res: Response): Promi
 
     res.status(500).json({
       success: false,
-      message: 'Error fetching issues from Linear',
+      message: 'Error fetching issues',
     });
   }
 };
 
 /**
- * GET /issues/:id - Get single issue from Linear
+ * GET /issues/:id - Get single issue
+ * Fetches from Linear if configured, otherwise from local database
  */
 export const getIssue = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   try {
@@ -171,35 +236,68 @@ export const getIssue = async (req: AuthenticatedRequest, res: Response): Promis
       return;
     }
 
-    if (!linearService.isConfigured()) {
-      res.status(503).json({
-        success: false,
-        message: 'Linear integration is not configured',
+    const { id } = req.params;
+
+    // Check if Linear is configured
+    if (linearService.isConfigured()) {
+      // === LINEAR MODE ===
+      // First, try to find in our ExternalIssue table
+      let externalIssue = await prisma.externalIssue.findFirst({
+        where: {
+          OR: [
+            { id },
+            { linearIssueId: id },
+          ],
+          tenantId: req.companyId,
+        },
+      });
+
+      // Get the Linear issue ID
+      const linearIssueId = externalIssue?.linearIssueId || id;
+
+      // Fetch from Linear
+      const linearIssue = await linearService.getIssue(linearIssueId);
+
+      // Check access for customers
+      if (req.userRole === Role.CUSTOMER && externalIssue?.createdById !== req.user.id) {
+        res.status(404).json({
+          success: false,
+          message: 'Issue not found',
+        });
+        return;
+      }
+
+      res.json({
+        success: true,
+        data: {
+          issue: transformLinearIssue(linearIssue, externalIssue),
+          source: 'linear'
+        },
       });
       return;
     }
 
-    const { id } = req.params;
+    // === LOCAL/LEGACY MODE ===
+    const where: any = { id, companyId: req.companyId };
+    
+    // For CUSTOMER role, only show their own issues
+    if (req.userRole === Role.CUSTOMER) {
+      where.customerId = req.user.id;
+    }
 
-    // First, try to find in our ExternalIssue table
-    let externalIssue = await prisma.externalIssue.findFirst({
-      where: {
-        OR: [
-          { id },
-          { linearIssueId: id },
-        ],
-        tenantId: req.companyId,
-      },
+    const issue = await prisma.issue.findFirst({
+      where,
+      include: {
+        customer: {
+          select: { name: true, email: true }
+        },
+        resolvedBy: {
+          select: { name: true }
+        }
+      }
     });
 
-    // Get the Linear issue ID
-    const linearIssueId = externalIssue?.linearIssueId || id;
-
-    // Fetch from Linear
-    const linearIssue = await linearService.getIssue(linearIssueId);
-
-    // Check access for customers
-    if (req.userRole === Role.CUSTOMER && externalIssue?.createdById !== req.user.id) {
+    if (!issue) {
       res.status(404).json({
         success: false,
         message: 'Issue not found',
@@ -210,7 +308,22 @@ export const getIssue = async (req: AuthenticatedRequest, res: Response): Promis
     res.json({
       success: true,
       data: {
-        issue: transformLinearIssue(linearIssue, externalIssue),
+        issue: {
+          id: issue.id,
+          title: issue.title,
+          description: issue.description,
+          status: issue.status,
+          priority: issue.priority,
+          category: issue.category,
+          createdAt: issue.createdAt,
+          updatedAt: issue.updatedAt,
+          resolvedAt: issue.resolvedAt,
+          resolution: issue.resolution,
+          customer: issue.customer,
+          resolvedBy: issue.resolvedBy,
+          identifier: `ISSUE-${issue.id.slice(0, 8).toUpperCase()}`,
+        },
+        source: 'local'
       },
     });
   } catch (error) {
@@ -233,7 +346,8 @@ export const getIssue = async (req: AuthenticatedRequest, res: Response): Promis
 };
 
 /**
- * POST /issues - Create issue in Linear and save reference locally
+ * POST /issues - Create issue
+ * Creates in Linear if configured, otherwise in local database
  */
 export const createIssue = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   try {
@@ -242,48 +356,88 @@ export const createIssue = async (req: AuthenticatedRequest, res: Response): Pro
       return;
     }
 
-    if (!linearService.isConfigured()) {
-      res.status(503).json({
-        success: false,
-        message: 'Linear integration is not configured. Please set LINEAR_API_TOKEN and LINEAR_TEAM_ID.',
+    const { title, description, priority, category } = req.body;
+    const roleLabel = req.userRole === Role.CUSTOMER ? 'Customer' : 'Admin';
+
+    // Check if Linear is configured
+    if (linearService.isConfigured()) {
+      // === LINEAR MODE ===
+      // Build description with metadata for Linear
+      const fullDescription = [
+        description,
+        '',
+        '---',
+        `**Category:** ${category || 'GENERAL'}`,
+        `**Created by:** ${req.user.name} (${req.user.email}) [${roleLabel}]`,
+        `**Tenant:** ${req.companyId}`,
+      ].join('\n');
+
+      // Create issue in Linear
+      const linearIssue = await linearService.createIssue({
+        title,
+        description: fullDescription,
+        priority: priority as keyof typeof LINEAR_PRIORITY_MAP,
+      });
+
+      // Save reference in our database
+      const externalIssue = await prisma.externalIssue.create({
+        data: {
+          linearIssueId: linearIssue.id,
+          linearUrl: linearIssue.url,
+          title: linearIssue.title,
+          description: description || null,
+          status: linearIssue.state?.name || 'Todo',
+          priority: linearIssue.priority,
+          createdById: req.user.id,
+          tenantId: req.companyId,
+        },
+      });
+
+      // Create activity record
+      await prisma.activity.create({
+        data: {
+          type: 'OTHER',
+          title: `New issue created: "${title}"`,
+          description: `${roleLabel} ${req.user.name} created a new issue (Linear: ${linearIssue.identifier})`,
+          companyId: req.companyId,
+          createdById: req.user.id,
+          metadata: {
+            linearIssueId: linearIssue.id,
+            linearUrl: linearIssue.url,
+            linearIdentifier: linearIssue.identifier,
+          },
+        },
+      });
+
+      res.status(201).json({
+        success: true,
+        message: 'Issue created successfully',
+        data: {
+          issue: transformLinearIssue(linearIssue, externalIssue),
+          source: 'linear'
+        },
       });
       return;
     }
 
-    // Both CUSTOMER and ADMIN can create issues
-    // CUSTOMER creates issues for themselves, ADMIN can create on behalf of company
-    const { title, description, priority, category } = req.body;
-
-    // Build description with metadata for Linear
-    const roleLabel = req.userRole === Role.CUSTOMER ? 'Customer' : 'Admin';
-    const fullDescription = [
-      description,
-      '',
-      '---',
-      `**Category:** ${category || 'GENERAL'}`,
-      `**Created by:** ${req.user.name} (${req.user.email}) [${roleLabel}]`,
-      `**Tenant:** ${req.companyId}`,
-    ].join('\n');
-
-    // Create issue in Linear
-    const linearIssue = await linearService.createIssue({
-      title,
-      description: fullDescription,
-      priority: priority as keyof typeof LINEAR_PRIORITY_MAP,
-    });
-
-    // Save reference in our database
-    const externalIssue = await prisma.externalIssue.create({
+    // === LOCAL/LEGACY MODE (no Linear) ===
+    console.log('[Issues] Creating issue in local database (Linear not configured)');
+    
+    const issue = await prisma.issue.create({
       data: {
-        linearIssueId: linearIssue.id,
-        linearUrl: linearIssue.url,
-        title: linearIssue.title,
-        description: description || null,
-        status: linearIssue.state?.name || 'Todo',
-        priority: linearIssue.priority,
-        createdById: req.user.id,
-        tenantId: req.companyId,
+        title,
+        description: description || '',
+        category: (category as any) || 'GENERAL',
+        priority: (priority as any) || 'MEDIUM',
+        status: 'OPEN',
+        customerId: req.user.id,
+        companyId: req.companyId,
       },
+      include: {
+        customer: {
+          select: { name: true, email: true }
+        }
+      }
     });
 
     // Create activity record
@@ -291,14 +445,9 @@ export const createIssue = async (req: AuthenticatedRequest, res: Response): Pro
       data: {
         type: 'OTHER',
         title: `New issue created: "${title}"`,
-        description: `${roleLabel} ${req.user.name} created a new issue (Linear: ${linearIssue.identifier})`,
+        description: `${roleLabel} ${req.user.name} created a new issue`,
         companyId: req.companyId,
         createdById: req.user.id,
-        metadata: {
-          linearIssueId: linearIssue.id,
-          linearUrl: linearIssue.url,
-          linearIdentifier: linearIssue.identifier,
-        },
       },
     });
 
@@ -306,7 +455,18 @@ export const createIssue = async (req: AuthenticatedRequest, res: Response): Pro
       success: true,
       message: 'Issue created successfully',
       data: {
-        issue: transformLinearIssue(linearIssue, externalIssue),
+        issue: {
+          id: issue.id,
+          title: issue.title,
+          description: issue.description,
+          status: issue.status,
+          priority: issue.priority,
+          category: issue.category,
+          createdAt: issue.createdAt,
+          customer: issue.customer,
+          identifier: `ISSUE-${issue.id.slice(0, 8).toUpperCase()}`,
+        },
+        source: 'local'
       },
     });
   } catch (error) {

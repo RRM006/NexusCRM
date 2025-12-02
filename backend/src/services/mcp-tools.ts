@@ -277,7 +277,7 @@ export const CRM_TOOLS: ToolDefinition[] = [
   },
   {
     name: 'create_issue',
-    description: 'Create a new support issue/ticket.',
+    description: 'Create a new support issue/ticket. Use this when user wants to report a problem, request support, or create a ticket.',
     parameters: {
       type: 'object',
       properties: {
@@ -302,7 +302,7 @@ export const CRM_TOOLS: ToolDefinition[] = [
       },
       required: ['title', 'description']
     },
-    allowedRoles: ['CUSTOMER']
+    allowedRoles: ['ADMIN', 'STAFF', 'CUSTOMER']
   },
   {
     name: 'create_lead',
@@ -464,6 +464,272 @@ export const CRM_TOOLS: ToolDefinition[] = [
         }
       },
       required: ['query']
+    },
+    allowedRoles: ['ADMIN', 'STAFF']
+  },
+
+  // ==================== DEAL OPERATIONS ====================
+  {
+    name: 'get_deals',
+    description: 'Get a list of deals/opportunities with optional filtering. Returns deal details including title, value, status, stage, and owner.',
+    parameters: {
+      type: 'object',
+      properties: {
+        status: {
+          type: 'string',
+          enum: ['ACTIVE', 'WON', 'LOST'],
+          description: 'Filter deals by status'
+        },
+        limit: {
+          type: 'number',
+          description: 'Maximum number of deals to return (default: 10)'
+        }
+      }
+    },
+    allowedRoles: ['ADMIN', 'STAFF']
+  },
+  {
+    name: 'create_deal',
+    description: 'Create a new deal/opportunity. Use this when user wants to add a new deal, opportunity, or sales pipeline item.',
+    parameters: {
+      type: 'object',
+      properties: {
+        title: {
+          type: 'string',
+          description: 'Title of the deal'
+        },
+        description: {
+          type: 'string',
+          description: 'Description of the deal'
+        },
+        value: {
+          type: 'number',
+          description: 'Deal value in dollars'
+        },
+        customerId: {
+          type: 'string',
+          description: 'Optional: Link deal to a customer'
+        },
+        expectedCloseDate: {
+          type: 'string',
+          description: 'Expected close date in ISO format (e.g., 2024-12-31)'
+        }
+      },
+      required: ['title']
+    },
+    allowedRoles: ['ADMIN', 'STAFF']
+  },
+  {
+    name: 'update_deal_status',
+    description: 'Update a deal status - mark as won or lost.',
+    parameters: {
+      type: 'object',
+      properties: {
+        dealId: {
+          type: 'string',
+          description: 'The ID of the deal to update'
+        },
+        status: {
+          type: 'string',
+          enum: ['WON', 'LOST'],
+          description: 'New status for the deal'
+        },
+        lostReason: {
+          type: 'string',
+          description: 'Reason for losing (required when status is LOST)'
+        }
+      },
+      required: ['dealId', 'status']
+    },
+    allowedRoles: ['ADMIN', 'STAFF']
+  },
+  {
+    name: 'convert_lead_to_deal',
+    description: 'Convert a qualified lead to a deal/opportunity.',
+    parameters: {
+      type: 'object',
+      properties: {
+        leadId: {
+          type: 'string',
+          description: 'The ID of the lead to convert'
+        },
+        value: {
+          type: 'number',
+          description: 'Deal value (uses lead value if not provided)'
+        },
+        expectedCloseDate: {
+          type: 'string',
+          description: 'Expected close date in ISO format'
+        }
+      },
+      required: ['leadId']
+    },
+    allowedRoles: ['ADMIN', 'STAFF']
+  },
+
+  // ==================== PIPELINE OPERATIONS ====================
+  {
+    name: 'get_pipeline_stages',
+    description: 'Get all pipeline stages with counts. Shows the sales funnel structure.',
+    parameters: {
+      type: 'object',
+      properties: {}
+    },
+    allowedRoles: ['ADMIN', 'STAFF']
+  },
+  {
+    name: 'move_lead_stage',
+    description: 'Move a lead to a different pipeline stage.',
+    parameters: {
+      type: 'object',
+      properties: {
+        leadId: {
+          type: 'string',
+          description: 'The ID of the lead to move'
+        },
+        stageName: {
+          type: 'string',
+          description: 'Target stage name (e.g., New, Contacted, Qualified, Proposal, Negotiation, Won, Lost)'
+        }
+      },
+      required: ['leadId', 'stageName']
+    },
+    allowedRoles: ['ADMIN', 'STAFF']
+  },
+
+  // ==================== ISSUE MANAGEMENT ====================
+  {
+    name: 'update_issue_status',
+    description: 'Update the status of a support issue/ticket.',
+    parameters: {
+      type: 'object',
+      properties: {
+        issueId: {
+          type: 'string',
+          description: 'The ID of the issue to update'
+        },
+        status: {
+          type: 'string',
+          enum: ['OPEN', 'IN_PROGRESS', 'RESOLVED', 'CLOSED'],
+          description: 'New status for the issue'
+        },
+        resolution: {
+          type: 'string',
+          description: 'Resolution notes (for RESOLVED status)'
+        }
+      },
+      required: ['issueId', 'status']
+    },
+    allowedRoles: ['ADMIN', 'STAFF']
+  },
+
+  // ==================== ACTIVITY & CALL LOGGING ====================
+  {
+    name: 'log_activity',
+    description: 'Log a CRM activity like call, meeting, email, or note. Use this to record interactions with leads/customers.',
+    parameters: {
+      type: 'object',
+      properties: {
+        type: {
+          type: 'string',
+          enum: ['CALL', 'EMAIL', 'MEETING', 'NOTE_ADDED', 'OTHER'],
+          description: 'Type of activity'
+        },
+        title: {
+          type: 'string',
+          description: 'Short title/summary of the activity'
+        },
+        description: {
+          type: 'string',
+          description: 'Detailed description of the activity'
+        },
+        leadId: {
+          type: 'string',
+          description: 'Optional: Link to a lead'
+        },
+        customerId: {
+          type: 'string',
+          description: 'Optional: Link to a customer'
+        },
+        dealId: {
+          type: 'string',
+          description: 'Optional: Link to a deal'
+        }
+      },
+      required: ['type', 'title']
+    },
+    allowedRoles: ['ADMIN', 'STAFF']
+  },
+  {
+    name: 'log_call',
+    description: 'Log a phone call with a lead or customer. Records call details for CRM history.',
+    parameters: {
+      type: 'object',
+      properties: {
+        contactName: {
+          type: 'string',
+          description: 'Name of the person called'
+        },
+        duration: {
+          type: 'number',
+          description: 'Call duration in minutes'
+        },
+        notes: {
+          type: 'string',
+          description: 'Call notes and summary'
+        },
+        outcome: {
+          type: 'string',
+          enum: ['COMPLETED', 'NO_ANSWER', 'VOICEMAIL', 'BUSY', 'CALLBACK_SCHEDULED'],
+          description: 'Outcome of the call'
+        },
+        leadId: {
+          type: 'string',
+          description: 'Optional: Link to a lead'
+        },
+        customerId: {
+          type: 'string',
+          description: 'Optional: Link to a customer'
+        }
+      },
+      required: ['contactName', 'outcome']
+    },
+    allowedRoles: ['ADMIN', 'STAFF']
+  },
+
+  // ==================== EMAIL OPERATIONS ====================
+  {
+    name: 'send_email',
+    description: 'Create and queue an email to be sent. Use this when user wants to send an email to a contact.',
+    parameters: {
+      type: 'object',
+      properties: {
+        toEmail: {
+          type: 'string',
+          description: 'Recipient email address'
+        },
+        toName: {
+          type: 'string',
+          description: 'Recipient name'
+        },
+        subject: {
+          type: 'string',
+          description: 'Email subject line'
+        },
+        body: {
+          type: 'string',
+          description: 'Email body content (plain text)'
+        },
+        leadId: {
+          type: 'string',
+          description: 'Optional: Link to a lead'
+        },
+        customerId: {
+          type: 'string',
+          description: 'Optional: Link to a customer'
+        }
+      },
+      required: ['toEmail', 'subject', 'body']
     },
     allowedRoles: ['ADMIN', 'STAFF']
   }
@@ -871,46 +1137,101 @@ export async function executeTool(
       }
 
       case 'create_issue': {
-        // Check if Linear is configured
-        if (!linearService.isConfigured()) {
-          return { success: false, error: 'Linear integration is not configured. Please contact admin.' };
-        }
-        
-        // Get user info for description
-        const user = await prisma.user.findUnique({
+        // Get user info
+        const issueUser = await prisma.user.findUnique({
           where: { id: userId },
           select: { name: true, email: true }
         });
         
-        // Build description with metadata
-        const fullDescription = [
-          params.description,
-          '',
-          '---',
-          `**Category:** ${params.category || 'GENERAL'}`,
-          `**Created by:** ${user?.name || 'Unknown'} (${user?.email || 'Unknown'}) [Customer via AI]`,
-          `**Tenant:** ${companyId}`,
-        ].join('\n');
+        // Check if Linear is configured
+        if (linearService.isConfigured()) {
+          // Create issue in Linear
+          try {
+            const fullDescription = [
+              params.description,
+              '',
+              '---',
+              `**Category:** ${params.category || 'GENERAL'}`,
+              `**Created by:** ${issueUser?.name || 'Unknown'} (${issueUser?.email || 'Unknown'}) via AI`,
+              `**Tenant:** ${companyId}`,
+            ].join('\n');
+            
+            const linearIssue = await linearService.createIssue({
+              title: params.title,
+              description: fullDescription,
+              priority: params.priority as keyof typeof LINEAR_PRIORITY_MAP,
+            });
+            
+            // Save reference in our database
+            const externalIssue = await prisma.externalIssue.create({
+              data: {
+                linearIssueId: linearIssue.id,
+                linearUrl: linearIssue.url,
+                title: linearIssue.title,
+                description: params.description || null,
+                status: linearIssue.state?.name || 'Todo',
+                priority: linearIssue.priority,
+                createdById: userId,
+                tenantId: companyId,
+              },
+            });
+            
+            // Log activity
+            await prisma.activity.create({
+              data: {
+                type: 'OTHER',
+                title: `New issue created via AI: "${params.title}"`,
+                description: `Issue created in Linear (${linearIssue.identifier})`,
+                companyId,
+                createdById: userId,
+                metadata: {
+                  linearIssueId: linearIssue.id,
+                  linearUrl: linearIssue.url,
+                  linearIdentifier: linearIssue.identifier,
+                },
+              },
+            });
+            
+            return { 
+              success: true, 
+              result: { 
+                message: 'Issue created successfully', 
+                issue: {
+                  id: externalIssue.id,
+                  linearId: linearIssue.identifier,
+                  title: linearIssue.title,
+                  status: linearIssue.state?.name || 'Todo',
+                  priority: params.priority || 'MEDIUM',
+                  url: linearIssue.url
+                }
+              } 
+            };
+          } catch (linearError: any) {
+            console.error('Linear issue creation failed, falling back to local:', linearError);
+            // Fall through to local issue creation
+          }
+        }
         
-        // Create issue in Linear
-        const linearIssue = await linearService.createIssue({
-          title: params.title,
-          description: fullDescription,
-          priority: params.priority as keyof typeof LINEAR_PRIORITY_MAP,
-        });
-        
-        // Save reference in our database
-        const externalIssue = await prisma.externalIssue.create({
+        // Create issue in local database (legacy Issue model) - fallback when Linear not configured
+        const issue = await prisma.issue.create({
           data: {
-            linearIssueId: linearIssue.id,
-            linearUrl: linearIssue.url,
-            title: linearIssue.title,
-            description: params.description || null,
-            status: linearIssue.state?.name || 'Todo',
-            priority: linearIssue.priority,
-            createdById: userId,
-            tenantId: companyId,
+            title: params.title,
+            description: params.description,
+            category: (params.category as any) || 'GENERAL',
+            priority: (params.priority as any) || 'MEDIUM',
+            status: 'OPEN',
+            customerId: userId,
+            companyId,
           },
+          select: {
+            id: true,
+            title: true,
+            description: true,
+            status: true,
+            priority: true,
+            category: true,
+            createdAt: true,
+          }
         });
         
         // Log activity
@@ -918,28 +1239,23 @@ export async function executeTool(
           data: {
             type: 'OTHER',
             title: `New issue created via AI: "${params.title}"`,
-            description: `Issue created in Linear (${linearIssue.identifier})`,
+            description: `Issue "${params.title}" created by ${issueUser?.name || 'Unknown'}`,
             companyId,
             createdById: userId,
-            metadata: {
-              linearIssueId: linearIssue.id,
-              linearUrl: linearIssue.url,
-              linearIdentifier: linearIssue.identifier,
-            },
           },
         });
         
         return { 
           success: true, 
           result: { 
-            message: 'Issue created successfully in Linear', 
+            message: 'Issue created successfully!', 
             issue: {
-              id: externalIssue.id,
-              linearId: linearIssue.identifier,
-              title: linearIssue.title,
-              status: linearIssue.state?.name || 'Todo',
-              priority: params.priority || 'MEDIUM',
-              url: linearIssue.url
+              id: issue.id,
+              title: issue.title,
+              status: issue.status,
+              priority: issue.priority,
+              category: issue.category,
+              createdAt: issue.createdAt
             }
           } 
         };
@@ -1150,6 +1466,404 @@ export async function executeTool(
         }
 
         return { success: true, result: results };
+      }
+
+      // ==================== DEAL OPERATIONS ====================
+      case 'get_deals': {
+        const where: any = { companyId };
+        if (params.status) where.status = params.status;
+        
+        const deals = await prisma.deal.findMany({
+          where,
+          take: params.limit || 10,
+          orderBy: { createdAt: 'desc' },
+          select: {
+            id: true,
+            title: true,
+            status: true,
+            value: true,
+            probability: true,
+            expectedCloseDate: true,
+            owner: { select: { name: true } },
+            customer: { select: { name: true } },
+            stage: { select: { name: true, color: true } }
+          }
+        });
+        return { success: true, result: deals };
+      }
+
+      case 'create_deal': {
+        // Get default stage
+        const defaultStage = await prisma.pipelineStage.findFirst({
+          where: { companyId, isClosed: false },
+          orderBy: { order: 'asc' }
+        });
+
+        const deal = await prisma.deal.create({
+          data: {
+            title: params.title,
+            description: params.description,
+            value: params.value || 0,
+            currency: 'USD',
+            stageId: defaultStage?.id,
+            probability: defaultStage?.probability || 50,
+            expectedRevenue: (params.value || 0) * ((defaultStage?.probability || 50) / 100),
+            customerId: params.customerId,
+            companyId,
+            ownerId: userId,
+            expectedCloseDate: params.expectedCloseDate ? new Date(params.expectedCloseDate) : null
+          },
+          select: {
+            id: true,
+            title: true,
+            value: true,
+            status: true,
+            stage: { select: { name: true } }
+          }
+        });
+
+        // Log activity
+        await prisma.activity.create({
+          data: {
+            type: 'DEAL_CREATED',
+            title: 'New deal created via AI',
+            description: `${params.title} - $${params.value || 0}`,
+            dealId: deal.id,
+            companyId,
+            createdById: userId
+          }
+        });
+
+        return { success: true, result: { message: `Deal "${params.title}" created successfully!`, deal } };
+      }
+
+      case 'update_deal_status': {
+        const deal = await prisma.deal.findFirst({
+          where: { id: params.dealId, companyId }
+        });
+        if (!deal) return { success: false, error: 'Deal not found' };
+
+        const updateData: any = { status: params.status };
+        
+        if (params.status === 'WON') {
+          updateData.wonAt = new Date();
+          updateData.actualCloseDate = new Date();
+          updateData.probability = 100;
+          
+          // Update customer total spent
+          if (deal.customerId) {
+            await prisma.customer.update({
+              where: { id: deal.customerId },
+              data: { totalSpent: { increment: deal.value } }
+            });
+          }
+        } else if (params.status === 'LOST') {
+          updateData.lostAt = new Date();
+          updateData.actualCloseDate = new Date();
+          updateData.lostReason = params.lostReason;
+          updateData.probability = 0;
+        }
+
+        const updated = await prisma.deal.update({
+          where: { id: params.dealId },
+          data: updateData,
+          select: { id: true, title: true, status: true, value: true }
+        });
+
+        // Log activity
+        await prisma.activity.create({
+          data: {
+            type: params.status === 'WON' ? 'DEAL_WON' : 'DEAL_LOST',
+            title: params.status === 'WON' ? 'Deal Won! 🎉' : 'Deal Lost',
+            description: `${deal.title} - $${deal.value}`,
+            dealId: params.dealId,
+            companyId,
+            createdById: userId
+          }
+        });
+
+        return { success: true, result: { message: `Deal marked as ${params.status}`, deal: updated } };
+      }
+
+      case 'convert_lead_to_deal': {
+        const lead = await prisma.lead.findFirst({
+          where: { id: params.leadId, companyId },
+          include: { customer: true, stage: true }
+        });
+        if (!lead) return { success: false, error: 'Lead not found' };
+        if (lead.convertedToDealId) return { success: false, error: 'Lead already converted to deal' };
+
+        // Get first active stage for deals
+        const dealStage = await prisma.pipelineStage.findFirst({
+          where: { companyId, isClosed: false },
+          orderBy: { order: 'asc' }
+        });
+
+        const dealValue = params.value || lead.value;
+        const deal = await prisma.deal.create({
+          data: {
+            title: lead.title,
+            description: lead.description,
+            value: dealValue,
+            currency: 'USD',
+            stageId: dealStage?.id,
+            probability: dealStage?.probability || 50,
+            expectedRevenue: dealValue * ((dealStage?.probability || 50) / 100),
+            customerId: lead.customerId,
+            companyId,
+            ownerId: userId,
+            expectedCloseDate: params.expectedCloseDate ? new Date(params.expectedCloseDate) : lead.expectedCloseDate
+          },
+          select: {
+            id: true,
+            title: true,
+            value: true,
+            status: true,
+            stage: { select: { name: true } }
+          }
+        });
+
+        // Update lead
+        await prisma.lead.update({
+          where: { id: params.leadId },
+          data: {
+            convertedToDealId: deal.id,
+            status: 'WON',
+            closedAt: new Date()
+          }
+        });
+
+        // Log activity
+        await prisma.activity.create({
+          data: {
+            type: 'LEAD_CONVERTED',
+            title: 'Lead converted to Deal via AI',
+            description: `${lead.title} converted to a deal worth $${dealValue}`,
+            leadId: params.leadId,
+            dealId: deal.id,
+            companyId,
+            createdById: userId
+          }
+        });
+
+        return { success: true, result: { message: `Lead "${lead.title}" converted to deal!`, deal } };
+      }
+
+      // ==================== PIPELINE OPERATIONS ====================
+      case 'get_pipeline_stages': {
+        const stages = await prisma.pipelineStage.findMany({
+          where: { companyId },
+          orderBy: { order: 'asc' },
+          select: {
+            id: true,
+            name: true,
+            color: true,
+            order: true,
+            probability: true,
+            isClosed: true,
+            isWon: true,
+            _count: { select: { leads: true, deals: true } }
+          }
+        });
+        return { success: true, result: stages };
+      }
+
+      case 'move_lead_stage': {
+        const lead = await prisma.lead.findFirst({
+          where: { id: params.leadId, companyId }
+        });
+        if (!lead) return { success: false, error: 'Lead not found' };
+
+        // Find stage by name
+        const stage = await prisma.pipelineStage.findFirst({
+          where: { 
+            companyId, 
+            name: { equals: params.stageName, mode: 'insensitive' } 
+          }
+        });
+        if (!stage) return { success: false, error: `Stage "${params.stageName}" not found` };
+
+        // Update lead
+        const updated = await prisma.lead.update({
+          where: { id: params.leadId },
+          data: {
+            stageId: stage.id,
+            stageEnteredAt: new Date(),
+            status: stage.isWon ? 'WON' : stage.isClosed ? 'LOST' : lead.status,
+            closedAt: stage.isClosed ? new Date() : null
+          },
+          select: {
+            id: true,
+            title: true,
+            status: true,
+            stage: { select: { name: true } }
+          }
+        });
+
+        // Log activity
+        await prisma.activity.create({
+          data: {
+            type: 'LEAD_STAGE_CHANGED',
+            title: `Lead moved to ${stage.name}`,
+            description: `${lead.title} moved to ${stage.name} stage via AI`,
+            leadId: params.leadId,
+            companyId,
+            createdById: userId
+          }
+        });
+
+        return { success: true, result: { message: `Lead moved to ${stage.name}`, lead: updated } };
+      }
+
+      // ==================== ISSUE MANAGEMENT ====================
+      case 'update_issue_status': {
+        // Try ExternalIssue first, then legacy Issue
+        let issue = await prisma.externalIssue.findFirst({
+          where: { id: params.issueId, tenantId: companyId }
+        });
+        
+        if (issue) {
+          // Map status to Linear format
+          const statusMap: Record<string, string> = {
+            'OPEN': 'Todo',
+            'IN_PROGRESS': 'In Progress',
+            'RESOLVED': 'Done',
+            'CLOSED': 'Canceled'
+          };
+          
+          const updated = await prisma.externalIssue.update({
+            where: { id: params.issueId },
+            data: { status: statusMap[params.status] || params.status },
+            select: { id: true, title: true, status: true }
+          });
+          
+          return { success: true, result: { message: `Issue status updated to ${params.status}`, issue: updated } };
+        }
+
+        // Try legacy Issue model
+        const legacyIssue = await prisma.issue.findFirst({
+          where: { id: params.issueId, companyId }
+        });
+        
+        if (!legacyIssue) return { success: false, error: 'Issue not found' };
+
+        const updateData: any = { status: params.status };
+        if (params.status === 'RESOLVED' || params.status === 'CLOSED') {
+          updateData.resolvedById = userId;
+          updateData.resolvedAt = new Date();
+          updateData.resolution = params.resolution;
+        }
+
+        const updatedLegacy = await prisma.issue.update({
+          where: { id: params.issueId },
+          data: updateData,
+          select: { id: true, title: true, status: true }
+        });
+
+        return { success: true, result: { message: `Issue status updated to ${params.status}`, issue: updatedLegacy } };
+      }
+
+      // ==================== ACTIVITY & CALL LOGGING ====================
+      case 'log_activity': {
+        const activity = await prisma.activity.create({
+          data: {
+            type: params.type as any,
+            title: params.title,
+            description: params.description,
+            leadId: params.leadId,
+            customerId: params.customerId,
+            dealId: params.dealId,
+            companyId,
+            createdById: userId
+          },
+          select: {
+            id: true,
+            type: true,
+            title: true,
+            createdAt: true
+          }
+        });
+
+        return { success: true, result: { message: 'Activity logged successfully', activity } };
+      }
+
+      case 'log_call': {
+        // Create activity for the call
+        const activity = await prisma.activity.create({
+          data: {
+            type: 'CALL',
+            title: `Call with ${params.contactName}`,
+            description: `Outcome: ${params.outcome}${params.duration ? ` | Duration: ${params.duration} min` : ''}${params.notes ? ` | Notes: ${params.notes}` : ''}`,
+            leadId: params.leadId,
+            customerId: params.customerId,
+            companyId,
+            createdById: userId,
+            metadata: {
+              contactName: params.contactName,
+              duration: params.duration,
+              outcome: params.outcome,
+              notes: params.notes
+            }
+          },
+          select: {
+            id: true,
+            type: true,
+            title: true,
+            description: true,
+            createdAt: true
+          }
+        });
+
+        return { success: true, result: { message: `Call with ${params.contactName} logged`, activity } };
+      }
+
+      // ==================== EMAIL OPERATIONS ====================
+      case 'send_email': {
+        // Get user info for from email
+        const sender = await prisma.user.findUnique({
+          where: { id: userId },
+          select: { name: true, email: true }
+        });
+
+        const email = await prisma.email.create({
+          data: {
+            direction: 'OUTBOUND',
+            fromEmail: sender?.email || 'noreply@nexuscrm.com',
+            fromName: sender?.name || 'NexusCRM',
+            toEmail: params.toEmail,
+            toName: params.toName,
+            subject: params.subject,
+            bodyText: params.body,
+            bodyHtml: `<p>${params.body.replace(/\n/g, '</p><p>')}</p>`,
+            status: 'QUEUED',
+            leadId: params.leadId,
+            customerId: params.customerId,
+            companyId,
+            createdById: userId
+          },
+          select: {
+            id: true,
+            toEmail: true,
+            subject: true,
+            status: true,
+            createdAt: true
+          }
+        });
+
+        // Log activity
+        await prisma.activity.create({
+          data: {
+            type: 'EMAIL',
+            title: `Email sent: ${params.subject}`,
+            description: `Email to ${params.toEmail}`,
+            leadId: params.leadId,
+            customerId: params.customerId,
+            companyId,
+            createdById: userId
+          }
+        });
+
+        return { success: true, result: { message: `Email to ${params.toEmail} queued successfully`, email } };
       }
 
       default:
