@@ -56,17 +56,21 @@ export const useWebRTC = () => {
 
     const handleWebRTCOffer = async ({ callId, offer, from }) => {
       if (callIdRef.current !== callId) return;
-      
+
+      console.log('📨 Received WebRTC offer from:', from);
+
       try {
         remoteSocketIdRef.current = from;
         const pc = peerConnectionRef.current;
         if (pc) {
+          console.log('🔄 Creating answer...');
           const answer = await createAnswer(pc, offer);
           sendAnswer(callId, answer, from);
-          
+          console.log('✅ Answer sent successfully');
+
           // Apply any queued ICE candidates now that remote description is set
           if (pendingIceCandidatesRef.current.length > 0) {
-            console.log(`Applying ${pendingIceCandidatesRef.current.length} queued ICE candidates`);
+            console.log(`🧊 Applying ${pendingIceCandidatesRef.current.length} queued ICE candidates`);
             for (const candidate of pendingIceCandidatesRef.current) {
               await addIceCandidate(pc, candidate);
             }
@@ -74,22 +78,26 @@ export const useWebRTC = () => {
           }
         }
       } catch (err) {
-        console.error('Error handling offer:', err);
+        console.error('❌ Error handling offer:', err);
         setError('Failed to process call offer');
       }
     };
 
     const handleWebRTCAnswer = async ({ callId, answer, from }) => {
       if (callIdRef.current !== callId) return;
-      
+
+      console.log('📨 Received WebRTC answer from:', from);
+
       try {
         const pc = peerConnectionRef.current;
         if (pc) {
+          console.log('🔄 Setting remote answer...');
           await setRemoteAnswer(pc, answer);
-          
+          console.log('✅ Remote answer set successfully');
+
           // Apply any queued ICE candidates now that remote description is set
           if (pendingIceCandidatesRef.current.length > 0) {
-            console.log(`Applying ${pendingIceCandidatesRef.current.length} queued ICE candidates`);
+            console.log(`🧊 Applying ${pendingIceCandidatesRef.current.length} queued ICE candidates`);
             for (const candidate of pendingIceCandidatesRef.current) {
               await addIceCandidate(pc, candidate);
             }
@@ -97,14 +105,14 @@ export const useWebRTC = () => {
           }
         }
       } catch (err) {
-        console.error('Error handling answer:', err);
+        console.error('❌ Error handling answer:', err);
         setError('Failed to establish connection');
       }
     };
 
     const handleICECandidate = async ({ callId, candidate, from }) => {
       if (callIdRef.current !== callId) return;
-      
+
       try {
         const pc = peerConnectionRef.current;
         if (pc) {
@@ -150,7 +158,7 @@ export const useWebRTC = () => {
     // Handle connection state changes
     pc.onconnectionstatechange = () => {
       setConnectionState(pc.connectionState);
-      
+
       if (pc.connectionState === 'connected') {
         setIsConnecting(false);
         startDurationTimer();
@@ -167,8 +175,14 @@ export const useWebRTC = () => {
 
     // Handle incoming remote stream
     pc.ontrack = (event) => {
-      console.log('Remote track received');
+      console.log('🎵 Remote track received!');
+      console.log('Track kind:', event.track.kind);
+      console.log('Track enabled:', event.track.enabled);
+      console.log('Track readyState:', event.track.readyState);
+
       const [remoteStream] = event.streams;
+      console.log('Remote stream tracks:', remoteStream.getTracks().length);
+
       remoteStreamRef.current = remoteStream;
       remoteAudioRef.current = playRemoteAudio(remoteStream);
     };
@@ -179,26 +193,45 @@ export const useWebRTC = () => {
   // Start a call (caller side - creates offer)
   const startCall = useCallback(async (callId, remoteSocketId) => {
     try {
+      console.log('📞 Starting call...', { callId, remoteSocketId });
       setIsConnecting(true);
       setError(null);
 
       // Get local audio stream
+      console.log('🎤 Requesting microphone access...');
       const localStream = await getLocalAudioStream();
+      console.log('✅ Microphone access granted');
+      console.log('Local stream tracks:', localStream.getTracks().length);
       localStreamRef.current = localStream;
 
       // Initialize peer connection
+      console.log('🔗 Initializing peer connection...');
       const pc = initializePeerConnection(callId, remoteSocketId);
 
       // Add local stream to peer connection
+      console.log('➕ Adding local tracks to peer connection...');
       addLocalStreamToPeerConnection(pc, localStream);
+      console.log('✅ Local tracks added');
 
       // Create and send offer
+      console.log('📤 Creating offer...');
       const offer = await createOffer(pc);
       sendOffer(callId, offer, remoteSocketId);
+      console.log('✅ Offer sent successfully');
 
     } catch (err) {
-      console.error('Error starting call:', err);
-      setError(err.message || 'Failed to start call');
+      console.error('❌ Error starting call:', err);
+      console.error('Error name:', err.name);
+      console.error('Error message:', err.message);
+
+      if (err.name === 'NotAllowedError') {
+        setError('Microphone access denied. Please allow microphone permissions and reload.');
+      } else if (err.name === 'NotFoundError') {
+        setError('No microphone found. Please connect a microphone.');
+      } else {
+        setError(err.message || 'Failed to start call');
+      }
+
       setIsConnecting(false);
       cleanup();
     }
@@ -207,24 +240,42 @@ export const useWebRTC = () => {
   // Answer a call (receiver side - waits for offer)
   const answerCall = useCallback(async (callId, remoteSocketId) => {
     try {
+      console.log('📞 Answering call...', { callId, remoteSocketId });
       setIsConnecting(true);
       setError(null);
 
       // Get local audio stream
+      console.log('🎤 Requesting microphone access...');
       const localStream = await getLocalAudioStream();
+      console.log('✅ Microphone access granted');
+      console.log('Local stream tracks:', localStream.getTracks().length);
       localStreamRef.current = localStream;
 
       // Initialize peer connection
+      console.log('🔗 Initializing peer connection...');
       const pc = initializePeerConnection(callId, remoteSocketId);
 
       // Add local stream to peer connection
+      console.log('➕ Adding local tracks to peer connection...');
       addLocalStreamToPeerConnection(pc, localStream);
+      console.log('✅ Local tracks added');
 
+      console.log('⏳ Waiting for offer from caller...');
       // Peer connection is now ready to receive offer
 
     } catch (err) {
-      console.error('Error answering call:', err);
-      setError(err.message || 'Failed to answer call');
+      console.error('❌ Error answering call:', err);
+      console.error('Error name:', err.name);
+      console.error('Error message:', err.message);
+
+      if (err.name === 'NotAllowedError') {
+        setError('Microphone access denied. Please allow microphone permissions and reload.');
+      } else if (err.name === 'NotFoundError') {
+        setError('No microphone found. Please connect a microphone.');
+      } else {
+        setError(err.message || 'Failed to answer call');
+      }
+
       setIsConnecting(false);
       cleanup();
     }
@@ -242,7 +293,7 @@ export const useWebRTC = () => {
   // Cleanup resources
   const cleanup = useCallback(() => {
     stopDurationTimer();
-    
+
     if (localStreamRef.current) {
       stopMediaStream(localStreamRef.current);
       localStreamRef.current = null;

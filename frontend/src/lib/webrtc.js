@@ -136,16 +136,50 @@ export const closePeerConnection = (peerConnection) => {
 };
 
 /**
- * Plays audio from a remote stream
+ * Plays audio from a remote stream using DOM audio element
  * @param {MediaStream} remoteStream 
- * @returns {HTMLAudioElement}
+ * @returns {HTMLAudioElement|null}
  */
 export const playRemoteAudio = (remoteStream) => {
-  const audio = new Audio();
-  audio.srcObject = remoteStream;
-  audio.autoplay = true;
-  audio.play().catch(e => console.error('Audio play error:', e));
-  return audio;
+  // WebRTC Debug Checklist:
+  // ✅ Mic allowed? (check 🔒 in address bar)
+  // ✅ getUserMedia() called on BOTH sides?
+  // ✅ addTrack() used (not addStream)?
+  // ✅ remote stream attached to <audio autoPlay>?
+  // ✅ STUN server configured?
+  // ✅ Testing on TWO REAL DEVICES (not localhost ↔ localhost)?
+
+  console.log('🔊 Setting up remote audio playback...');
+
+  // Try to use DOM audio element first (preferred for autoplay)
+  const remoteAudio = window.__webrtc_remote_audio || document.getElementById('remote-audio');
+
+  if (remoteAudio) {
+    console.log('✅ Using DOM audio element for remote stream');
+    remoteAudio.srcObject = remoteStream;
+
+    // Ensure autoplay
+    remoteAudio.play()
+      .then(() => console.log('✅ Remote audio playing successfully'))
+      .catch(e => {
+        console.warn('⚠️ Autoplay blocked. User interaction may be required:', e);
+        console.warn('💡 TIP: Click anywhere on the page to enable audio');
+      });
+
+    return remoteAudio;
+  } else {
+    // Fallback to creating audio element
+    console.warn('⚠️ DOM audio element not found, creating fallback');
+    const audio = new Audio();
+    audio.srcObject = remoteStream;
+    audio.autoplay = true;
+    audio.playsInline = true;
+    audio.play().catch(e => {
+      console.error('❌ Audio play error:', e);
+      console.error('💡 SOLUTION: Ensure microphone permissions are granted on BOTH devices');
+    });
+    return audio;
+  }
 };
 
 /**
