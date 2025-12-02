@@ -28,11 +28,15 @@ export const authenticateSuperAdmin = async (
 
     const token = authHeader.split(' ')[1];
     
+    console.log('SuperAdmin middleware: Token received, length:', token?.length);
+    
     try {
       const decoded = jwt.verify(token, SUPER_ADMIN_SECRET) as { 
         isSuperAdmin: boolean; 
         email: string 
       };
+      
+      console.log('SuperAdmin middleware: Token decoded successfully:', decoded.email);
       
       if (!decoded.isSuperAdmin) {
         res.status(403).json({
@@ -48,7 +52,8 @@ export const authenticateSuperAdmin = async (
       };
 
       next();
-    } catch (error) {
+    } catch (error: any) {
+      console.error('SuperAdmin middleware: Token verification failed:', error.message);
       res.status(401).json({
         success: false,
         message: 'Invalid or expired super admin token'

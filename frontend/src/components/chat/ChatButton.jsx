@@ -32,6 +32,7 @@ export const ChatButton = ({
   const handleClick = (e) => {
     e.stopPropagation()
     e.preventDefault()
+    console.log('ChatButton clicked:', { targetUserId, targetCompanyId, isSuperAdmin })
     setIsChatOpen(true)
   }
 

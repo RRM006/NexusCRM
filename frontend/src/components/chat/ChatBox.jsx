@@ -63,6 +63,7 @@ export const ChatBox = ({
     // For super admin, verify token exists first
     if (isSuperAdmin) {
       const token = localStorage.getItem('superAdminToken')
+      console.log('ChatBox SuperAdmin: Token exists:', !!token, 'Token length:', token?.length)
       if (!token) {
         setError('Super Admin session expired. Please log in again.')
         return
@@ -72,6 +73,8 @@ export const ChatBox = ({
     try {
       setIsLoading(true)
       setError(null)
+      
+      console.log('ChatBox: Starting conversation', { isSuperAdmin, targetCompanyId, targetUserId })
 
       let res
       if (isSuperAdmin) {
@@ -221,7 +224,7 @@ export const ChatBox = ({
   if (!isOpen) return null
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
+    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 backdrop-blur-sm">
       <div className="bg-white dark:bg-dark-900 rounded-2xl shadow-2xl w-full max-w-md mx-4 flex flex-col h-[600px] max-h-[85vh] overflow-hidden">
         {/* Header */}
         <div className="flex items-center justify-between px-4 py-3 border-b border-dark-100 dark:border-dark-800 bg-gradient-to-r from-primary-500 to-primary-600 text-white rounded-t-2xl">

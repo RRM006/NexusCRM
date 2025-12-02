@@ -32,7 +32,8 @@ import {
 } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { superAdminAPI, superAdminChatAPI } from '../../services/api'
-import { ChatButton, FloatingChatButton } from '../../components/chat'
+import { FloatingChatButton } from '../../components/chat'
+import { MessageCircle, Send, X as XIcon } from 'lucide-react'
 
 // Stat Card Component
 const StatCard = ({ title, value, icon: Icon, trend, trendValue, color, delay }) => {
@@ -72,7 +73,7 @@ const StatCard = ({ title, value, icon: Icon, trend, trendValue, color, delay })
 }
 
 // Company Row Component
-const CompanyRow = ({ company, onToggleStatus, onViewDetails }) => {
+const CompanyRow = ({ company, onToggleStatus, onViewDetails, onOpenChat }) => {
   const [showMenu, setShowMenu] = useState(false)
 
   return (
@@ -128,13 +129,14 @@ const CompanyRow = ({ company, onToggleStatus, onViewDetails }) => {
         </p>
       </td>
       <td className="py-4 px-4">
-        <div className="relative flex items-center gap-1">
-          <ChatButton
-            targetCompanyId={company.id}
-            targetCompanyName={company.name}
-            isSuperAdmin
-            label="Message company"
-          />
+        <div className="relative flex items-center gap-2">
+          <button
+            onClick={() => onOpenChat(company)}
+            className="p-2 bg-primary-500/20 hover:bg-primary-500/30 text-primary-400 rounded-lg transition-colors"
+            title="Message company"
+          >
+            <MessageCircle className="w-4 h-4" />
+          </button>
           <button
             onClick={() => setShowMenu(!showMenu)}
             className="p-2 hover:bg-slate-700/50 rounded-lg transition-colors"
@@ -179,6 +181,14 @@ const SuperAdminDashboard = () => {
   const [stats, setStats] = useState(null)
   const [searchQuery, setSearchQuery] = useState('')
   const [activeTab, setActiveTab] = useState('overview')
+  
+  // Chat state
+  const [chatCompany, setChatCompany] = useState(null)
+  const [chatMessages, setChatMessages] = useState([])
+  const [chatInput, setChatInput] = useState('')
+  const [chatLoading, setChatLoading] = useState(false)
+  const [chatSending, setChatSending] = useState(false)
+  const [conversation, setConversation] = useState(null)
   
   // Issues state
   const [issues, setIssues] = useState([])
@@ -290,6 +300,61 @@ const SuperAdminDashboard = () => {
   const handleViewCompanyDetails = (companyId) => {
     // For now, just show a toast. Can be expanded to a modal or new page
     toast.info('Company details view coming soon!')
+  }
+
+  // Chat functions
+  const handleOpenChat = async (company) => {
+    setChatCompany(company)
+    setChatLoading(true)
+    setChatMessages([])
+    setConversation(null)
+    
+    try {
+      const res = await superAdminChatAPI.startWithCompany(company.id)
+      if (res.data.success) {
+        const conv = res.data.data.conversation
+        setConversation(conv)
+        // Load messages
+        const msgRes = await superAdminChatAPI.getConversation(conv.id)
+        if (msgRes.data.success) {
+          setChatMessages(msgRes.data.data.conversation.messages || [])
+        }
+      }
+    } catch (error) {
+      console.error('Failed to start chat:', error)
+      toast.error('Failed to open chat')
+    } finally {
+      setChatLoading(false)
+    }
+  }
+
+  const handleSendMessage = async (e) => {
+    e.preventDefault()
+    if (!chatInput.trim() || !conversation?.id || chatSending) return
+    
+    const messageContent = chatInput.trim()
+    setChatInput('')
+    setChatSending(true)
+    
+    try {
+      const res = await superAdminChatAPI.send(conversation.id, messageContent)
+      if (res.data.success) {
+        setChatMessages(prev => [...prev, res.data.data.message])
+      }
+    } catch (error) {
+      console.error('Failed to send message:', error)
+      toast.error('Failed to send message')
+      setChatInput(messageContent)
+    } finally {
+      setChatSending(false)
+    }
+  }
+
+  const handleCloseChat = () => {
+    setChatCompany(null)
+    setChatMessages([])
+    setConversation(null)
+    setChatInput('')
   }
 
   const filteredCompanies = stats?.companies?.filter(company =>
@@ -438,11 +503,13 @@ const SuperAdminDashboard = () => {
 
         {/* Companies Table */}
         {activeTab === 'overview' || activeTab === 'companies' ? (
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            className="bg-slate-800/50 backdrop-blur border border-slate-700/50 rounded-2xl overflow-hidden"
-          >
+          <div className="flex gap-6">
+            {/* Companies Table */}
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              className={`bg-slate-800/50 backdrop-blur border border-slate-700/50 rounded-2xl overflow-hidden ${chatCompany ? 'flex-1' : 'w-full'}`}
+            >
             <div className="p-6 border-b border-slate-700/50">
               <div className="flex items-center justify-between">
                 <div>
@@ -486,6 +553,7 @@ const SuperAdminDashboard = () => {
                         company={company}
                         onToggleStatus={handleToggleCompanyStatus}
                         onViewDetails={handleViewCompanyDetails}
+                        onOpenChat={handleOpenChat}
                       />
                     ))
                   ) : (
@@ -499,6 +567,100 @@ const SuperAdminDashboard = () => {
               </table>
             </div>
           </motion.div>
+
+          {/* Side Chat Panel */}
+          {chatCompany && (
+            <motion.div
+              initial={{ opacity: 0, x: 50 }}
+              animate={{ opacity: 1, x: 0 }}
+              exit={{ opacity: 0, x: 50 }}
+              className="w-96 flex-shrink-0 bg-slate-800/50 backdrop-blur border border-slate-700/50 rounded-2xl overflow-hidden flex flex-col h-[600px]"
+            >
+              {/* Chat Header */}
+              <div className="p-4 border-b border-slate-700/50 bg-gradient-to-r from-indigo-600 to-violet-600">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-xl bg-white/20 flex items-center justify-center text-white font-bold">
+                      {chatCompany.name.charAt(0)}
+                    </div>
+                    <div>
+                      <h3 className="font-semibold text-white">{chatCompany.name}</h3>
+                      <p className="text-xs text-white/70">Super Admin Chat</p>
+                    </div>
+                  </div>
+                  <button
+                    onClick={handleCloseChat}
+                    className="p-2 rounded-lg hover:bg-white/20 transition-colors text-white"
+                  >
+                    <XIcon className="w-5 h-5" />
+                  </button>
+                </div>
+              </div>
+
+              {/* Chat Messages */}
+              <div className="flex-1 overflow-y-auto p-4 space-y-3">
+                {chatLoading ? (
+                  <div className="flex items-center justify-center h-full">
+                    <Loader2 className="w-8 h-8 animate-spin text-indigo-500" />
+                  </div>
+                ) : chatMessages.length === 0 ? (
+                  <div className="flex items-center justify-center h-full text-slate-500">
+                    <div className="text-center">
+                      <MessageCircle className="w-12 h-12 mx-auto mb-3 opacity-50" />
+                      <p className="text-sm">No messages yet</p>
+                      <p className="text-xs mt-1">Start the conversation</p>
+                    </div>
+                  </div>
+                ) : (
+                  chatMessages.map((msg) => (
+                    <div
+                      key={msg.id}
+                      className={`flex ${msg.isSuperAdminSender ? 'justify-end' : 'justify-start'}`}
+                    >
+                      <div
+                        className={`max-w-[80%] rounded-2xl px-4 py-2 ${
+                          msg.isSuperAdminSender
+                            ? 'bg-indigo-600 text-white rounded-br-md'
+                            : 'bg-slate-700 text-slate-100 rounded-bl-md'
+                        }`}
+                      >
+                        <p className="text-sm">{msg.content}</p>
+                        <p className={`text-xs mt-1 ${msg.isSuperAdminSender ? 'text-indigo-200' : 'text-slate-400'}`}>
+                          {new Date(msg.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                        </p>
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+
+              {/* Chat Input */}
+              <form onSubmit={handleSendMessage} className="p-4 border-t border-slate-700/50">
+                <div className="flex items-center gap-2">
+                  <input
+                    type="text"
+                    value={chatInput}
+                    onChange={(e) => setChatInput(e.target.value)}
+                    placeholder="Type your message..."
+                    disabled={chatLoading || !conversation}
+                    className="flex-1 px-4 py-2.5 bg-slate-700/50 border border-slate-600/50 rounded-xl text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500 disabled:opacity-50"
+                  />
+                  <button
+                    type="submit"
+                    disabled={!chatInput.trim() || chatSending || !conversation}
+                    className="p-2.5 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed rounded-xl text-white transition-colors"
+                  >
+                    {chatSending ? (
+                      <Loader2 className="w-5 h-5 animate-spin" />
+                    ) : (
+                      <Send className="w-5 h-5" />
+                    )}
+                  </button>
+                </div>
+              </form>
+            </motion.div>
+          )}
+          </div>
         ) : null}
 
         {/* Issues Tab */}
