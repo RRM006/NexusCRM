@@ -56,7 +56,7 @@ const TelegramSettings = () => {
     try {
       const response = await telegramAPI.updatePhone(phone)
       if (response.data.success) {
-        toast.success('Phone number saved!')
+        toast.success('Phone number saved! Now open the Telegram bot and share your contact.')
         fetchStatus()
       }
     } catch (error) {
@@ -65,6 +65,16 @@ const TelegramSettings = () => {
       setIsSaving(false)
     }
   }
+
+  // Auto-refresh status every 5 seconds when not linked (to detect bot linking)
+  useEffect(() => {
+    if (status && !status.isTelegramLinked) {
+      const interval = setInterval(() => {
+        fetchStatus()
+      }, 5000)
+      return () => clearInterval(interval)
+    }
+  }, [status?.isTelegramLinked])
 
   const handleTestNotification = async () => {
     setIsTesting(true)
@@ -152,14 +162,28 @@ const TelegramSettings = () => {
               {status?.isTelegramLinked && status?.telegramUsername && (
                 <p className="text-sm text-dark-500">@{status.telegramUsername}</p>
               )}
+              {!status?.isTelegramLinked && status?.hasPhone && (
+                <p className="text-xs text-amber-600 flex items-center gap-1">
+                  <RefreshCw className="w-3 h-3 animate-spin" />
+                  Waiting for Telegram link...
+                </p>
+              )}
             </div>
           </div>
-          {status?.isTelegramLinked && (
+          {status?.isTelegramLinked ? (
             <button
               onClick={handleUnlink}
               className="text-sm text-red-500 hover:text-red-600"
             >
               Unlink
+            </button>
+          ) : (
+            <button
+              onClick={fetchStatus}
+              className="btn btn-secondary btn-sm"
+            >
+              <RefreshCw className="w-4 h-4" />
+              Refresh
             </button>
           )}
         </div>

@@ -22,8 +22,8 @@ router.put('/phone',
     body('phone')
       .notEmpty()
       .withMessage('Phone number is required')
-      .matches(/^[\+]?[(]?[0-9]{3}[)]?[-\s\.]?[0-9]{3}[-\s\.]?[0-9]{4,6}$/)
-      .withMessage('Please enter a valid phone number')
+      .matches(/^[\+]?[0-9\s\-\(\)]{7,20}$/)
+      .withMessage('Please enter a valid phone number (7-20 digits)')
   ],
   async (req: AuthRequest, res: Response, next: NextFunction) => {
     try {

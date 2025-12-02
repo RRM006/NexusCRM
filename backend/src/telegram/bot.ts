@@ -56,18 +56,40 @@ Once linked, you'll be able to:
       return ctx.reply('❌ No phone number received. Please try again.');
     }
 
-    // Normalize phone number (remove + and spaces)
-    const phoneNumber = contact.phone_number.replace(/[\s+\-()]/g, '');
+    // Normalize phone number - create multiple variants to search
+    const rawPhone = contact.phone_number;
+    const cleanPhone = rawPhone.replace(/[\s+\-()]/g, ''); // Remove all formatting
+    
+    // Create search variants for different formats
+    const phoneVariants: string[] = [
+      rawPhone,                           // Original: +8801718964936
+      cleanPhone,                         // No symbols: 8801718964936
+      `+${cleanPhone}`,                   // With +: +8801718964936
+    ];
+    
+    // For Bangladesh numbers, also try local format
+    if (cleanPhone.startsWith('880')) {
+      const localNumber = '0' + cleanPhone.slice(3);  // 8801718964936 -> 01718964936
+      phoneVariants.push(localNumber);
+      phoneVariants.push(cleanPhone.slice(3));        // Without leading 0: 1718964936
+    }
+    
+    // For numbers starting with 0, also try with country code
+    if (cleanPhone.startsWith('0')) {
+      phoneVariants.push('880' + cleanPhone.slice(1));  // 01718964936 -> 8801718964936
+      phoneVariants.push('+880' + cleanPhone.slice(1)); // 01718964936 -> +8801718964936
+    }
+
+    // Remove duplicates
+    const uniqueVariants = [...new Set(phoneVariants)];
+    
+    console.log('Searching for phone variants:', uniqueVariants);
     
     try {
-      // Find user by phone number
+      // Find user by any phone number variant
       const user = await prisma.user.findFirst({
         where: {
-          OR: [
-            { phone: phoneNumber },
-            { phone: `+${phoneNumber}` },
-            { phone: contact.phone_number }
-          ]
+          OR: uniqueVariants.map(phone => ({ phone }))
         },
         include: {
           userCompanyRoles: {
@@ -84,14 +106,18 @@ Once linked, you'll be able to:
 
 No CRM account found with this phone number.
 
-Please make sure you've added this phone number to your CRM profile:
-📱 \`${contact.phone_number}\`
+📱 *Your number:* \`${contact.phone_number}\`
 
-*Steps:*
-1. Login to NexusCRM
-2. Go to Profile Settings
-3. Add this phone number
-4. Try sharing your contact again
+*We searched for:*
+${uniqueVariants.slice(0, 4).map(v => `• \`${v}\``).join('\n')}
+
+*Steps to fix:*
+1. Login to NexusCRM web app
+2. Go to Profile (click your name → Profile)
+3. Add your phone number in one of these formats:
+   • \`${cleanPhone}\`
+   • \`+${cleanPhone}\`
+4. Save and try sharing your contact again
         `);
       }
 
