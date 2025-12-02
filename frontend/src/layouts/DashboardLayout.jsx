@@ -28,7 +28,8 @@ import {
   AlertCircle,
   Mail,
   Bot,
-  Kanban
+  Kanban,
+  MessageCircle
 } from 'lucide-react'
 
 const DashboardLayout = () => {
@@ -53,6 +54,7 @@ const DashboardLayout = () => {
     { name: 'Tasks', icon: CheckSquare, href: '/tasks' },
     { name: 'Notes', icon: FileText, href: '/notes' },
     { name: 'Activities', icon: Activity, href: '/activities' },
+    { name: 'Messages', icon: MessageCircle, href: '/messages', roles: ['CUSTOMER'] },
   ]
 
   const filteredNavigation = navigation.filter(item => 
